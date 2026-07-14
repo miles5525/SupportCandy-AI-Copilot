@@ -157,8 +157,8 @@ final class SCAI_Admin {
 
 		add_submenu_page(
 			self::MENU_SLUG,
-			esc_html__( 'Diagnostics', 'supportcandy-ai' ),
-			esc_html__( 'Diagnostics', 'supportcandy-ai' ),
+			esc_html__( 'SupportCandy AI System Check', 'supportcandy-ai' ),
+			esc_html__( 'System Check', 'supportcandy-ai' ),
 			self::CAPABILITY,
 			'scai-diagnostics',
 			array( $this, 'render_diagnostics_page' )
@@ -374,13 +374,13 @@ final class SCAI_Admin {
 	private function render_missing_diagnostics_page_notice() {
 		?>
 		<div class="wrap scai-admin-page">
-			<h1><?php echo esc_html__( 'Diagnostics', 'supportcandy-ai' ); ?></h1>
+			<h1><?php echo esc_html__( 'SupportCandy AI System Check', 'supportcandy-ai' ); ?></h1>
 
 			<div class="notice notice-error">
 				<p>
 					<?php
 					echo esc_html__(
-						'Diagnostics page controller is unavailable. Please check the plugin installation.',
+						'System Check page controller is unavailable. Please check the plugin installation.',
 						'supportcandy-ai'
 					);
 					?>

@@ -114,3 +114,53 @@
 		flex: 1 1 100%;
 	}
 }
+
+.scai-permissions-page .scai-permission-summary,
+.scai-permissions-page .scai-role-options {
+	max-width: 760px;
+}
+
+.scai-permissions-page .scai-role-options {
+	display: grid;
+	gap: 12px;
+}
+
+.scai-permissions-page .scai-role-option {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	box-sizing: border-box;
+	margin: 0;
+	padding: 14px 16px;
+	border: 1px solid #dcdcde;
+	border-radius: var(--scai-admin-control-radius);
+	background: #fff;
+}
+
+.scai-permissions-page .scai-role-option:hover {
+	border-color: #8c8f94;
+}
+
+.scai-permissions-page .scai-role-option > input {
+	margin-top: 3px;
+}
+
+.scai-permissions-page .scai-role-content {
+	display: flex;
+	min-width: 0;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.scai-permissions-page .scai-role-title {
+	font-size: 14px;
+}
+
+.scai-permissions-page .scai-role-meta {
+	display: block;
+}
+
+.scai-permissions-page .scai-muted {
+	color: #646970;
+	font-size: 12px;
+}

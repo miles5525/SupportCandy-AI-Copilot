@@ -15,6 +15,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 final class SCAI_Permissions_Page {
 
 	/**
+	 * Cached SupportCandy role labels.
+	 *
+	 * @var array<int, string>|null
+	 */
+	private $role_labels = null;
+
+	/**
 	 * Required capability.
 	 *
 	 * @var string
@@ -98,15 +105,22 @@ final class SCAI_Permissions_Page {
 		$role_choices     = $this->get_supportcandy_role_choices();
 		$allowed_role_ids = $this->get_allowed_role_ids();
 		$permission_mode  = empty( $allowed_role_ids ) ? 'all' : 'selected';
+		$role_labels      = $this->get_supportcandy_role_labels();
 		?>
-		<div class="wrap scai-admin-page">
+		<div class="wrap scai-admin-page scai-permissions-page">
 			<h1><?php echo esc_html__( 'AI Permissions', 'supportcandy-ai' ); ?></h1>
 
-			<p><?php echo esc_html__( 'AI can be allowed for all active SupportCandy agents or restricted to selected SupportCandy role IDs.', 'supportcandy-ai' ); ?></p>
-			<p><?php echo esc_html__( 'SupportCandy role names have not been detected yet, so numeric role IDs are shown.', 'supportcandy-ai' ); ?></p>
+			<p><?php echo esc_html__( 'Choose which SupportCandy agent roles can use AI features on ticket pages.', 'supportcandy-ai' ); ?></p>
+			<p><?php echo esc_html__( 'WordPress administrators do not bypass this setting. AI access is based on the user’s active SupportCandy agent role.', 'supportcandy-ai' ); ?></p>
+
+			<?php if ( empty( $role_labels ) ) : ?>
+				<div class="notice notice-info inline">
+					<p><?php echo esc_html__( 'SupportCandy role names could not be detected, so numeric role labels are shown.', 'supportcandy-ai' ); ?></p>
+				</div>
+			<?php endif; ?>
 
 			<?php $this->render_notice(); ?>
-			<?php $this->render_permission_summary( $allowed_role_ids ); ?>
+			<?php $this->render_permission_summary( $allowed_role_ids, $role_labels ); ?>
 
 			<hr />
 
@@ -130,18 +144,23 @@ final class SCAI_Permissions_Page {
 							</td>
 						</tr>
 						<tr>
-							<th scope="row"><?php echo esc_html__( 'Allowed role IDs', 'supportcandy-ai' ); ?></th>
+							<th scope="row"><?php echo esc_html__( 'Allowed SupportCandy roles', 'supportcandy-ai' ); ?></th>
 							<td>
 								<?php if ( empty( $role_choices ) ) : ?>
 									<p><?php echo esc_html__( 'No SupportCandy agent role IDs were detected.', 'supportcandy-ai' ); ?></p>
 								<?php else : ?>
-									<fieldset>
+									<fieldset class="scai-role-options">
 										<?php foreach ( $role_choices as $role ) : ?>
-											<label style="display: block; margin-bottom: 12px;">
+											<label class="scai-role-option">
 												<input type="checkbox" name="scai_allowed_supportcandy_role_ids[]" value="<?php echo esc_attr( $role['role_id'] ); ?>" <?php checked( in_array( $role['role_id'], $allowed_role_ids, true ) ); ?> />
-												<?php echo esc_html( $role['label'] ); ?>
-												<span class="description" style="display: block; margin-left: 24px;">
-													<?php echo esc_html__( 'Role ID:', 'supportcandy-ai' ); ?> <code><?php echo esc_html( (string) absint( $role['role_id'] ) ); ?></code>
+												<span class="scai-role-content">
+													<strong class="scai-role-title"><?php echo esc_html( $this->get_role_title( $role ) ); ?></strong>
+													<span class="scai-role-meta scai-muted">
+														<?php echo esc_html( sprintf( /* translators: %d: SupportCandy role ID. */ __( 'Role ID: %d', 'supportcandy-ai' ), absint( $role['role_id'] ) ) ); ?>
+													</span>
+													<span class="scai-role-meta">
+														<?php echo esc_html( $this->get_active_agents_text( $role ) ); ?>
+													</span>
 												</span>
 											</label>
 										<?php endforeach; ?>
@@ -325,6 +344,169 @@ final class SCAI_Permissions_Page {
 	}
 
 	/**
+	 * Get a concise title for a SupportCandy role.
+	 *
+	 * @param array<string, mixed> $role Role choice data.
+	 * @return string
+	 */
+	private function get_role_title( array $role ) {
+		$role_id   = isset( $role['role_id'] ) ? absint( $role['role_id'] ) : 0;
+		$role_name = isset( $role['role_name'] ) ? sanitize_text_field( (string) $role['role_name'] ) : '';
+
+		return '' !== $role_name
+			? $role_name
+			: sprintf(
+				/* translators: %d: SupportCandy role ID. */
+				__( 'Role #%d', 'supportcandy-ai' ),
+				$role_id
+			);
+	}
+
+	/**
+	 * Build readable active-agent information for a role card.
+	 *
+	 * @param array<string, mixed> $role Role choice data.
+	 * @return string
+	 */
+	private function get_active_agents_text( array $role ) {
+		$active_count = isset( $role['active_count'] ) ? absint( $role['active_count'] ) : 0;
+		$agent_names  = isset( $role['agent_names'] ) && is_array( $role['agent_names'] )
+			? array_slice( array_filter( array_map( 'sanitize_text_field', $role['agent_names'] ) ), 0, 5 )
+			: array();
+		$text         = sprintf(
+			/* translators: %d: Number of active SupportCandy agents. */
+			_n( 'Active agent: %d', 'Active agents: %d', $active_count, 'supportcandy-ai' ),
+			$active_count
+		);
+
+		if ( ! empty( $agent_names ) ) {
+			$text .= ' — ' . implode( ', ', $agent_names );
+
+			if ( $active_count > count( $agent_names ) ) {
+				$text .= sprintf(
+					/* translators: %d: Number of additional active agents. */
+					__( ' +%d more', 'supportcandy-ai' ),
+					$active_count - count( $agent_names )
+				);
+			}
+		}
+
+		return sanitize_text_field( $text );
+	}
+
+	/**
+	 * Get SupportCandy role labels from its configured roles or role tables.
+	 *
+	 * @return array<int, string>
+	 */
+	private function get_supportcandy_role_labels() {
+		global $wpdb;
+
+		if ( is_array( $this->role_labels ) ) {
+			return $this->role_labels;
+		}
+
+		$labels = array();
+		$roles  = get_option( 'wpsc-agent-roles', array() );
+
+		if ( is_array( $roles ) ) {
+			foreach ( $roles as $role_id => $role ) {
+				$role_id = absint( $role_id );
+
+				if ( ! $role_id || ! is_array( $role ) ) {
+					continue;
+				}
+
+				foreach ( array( 'label', 'name', 'title', 'role' ) as $label_key ) {
+					if ( ! empty( $role[ $label_key ] ) && is_scalar( $role[ $label_key ] ) ) {
+						$labels[ $role_id ] = sanitize_text_field( (string) $role[ $label_key ] );
+						break;
+					}
+				}
+			}
+		}
+
+		foreach ( array( $wpdb->prefix . 'psmsc_roles', $wpdb->prefix . 'psmsc_agent_roles' ) as $table_name ) {
+			if ( ! empty( $labels ) || ! $this->table_exists( $table_name ) ) {
+				continue;
+			}
+
+			$labels = $this->get_role_labels_from_table( $table_name );
+		}
+
+		/**
+		 * Filter detected SupportCandy role labels for display purposes.
+		 *
+		 * @param array<int, string> $labels Detected labels keyed by role ID.
+		 */
+		$labels = apply_filters( 'scai_supportcandy_role_labels', $labels );
+		$clean  = array();
+
+		if ( is_array( $labels ) ) {
+			foreach ( $labels as $role_id => $label ) {
+				$role_id = absint( $role_id );
+				$label   = is_scalar( $label ) ? sanitize_text_field( (string) $label ) : '';
+
+				if ( $role_id && '' !== $label ) {
+					$clean[ $role_id ] = $label;
+				}
+			}
+		}
+
+		$this->role_labels = $clean;
+
+		return $this->role_labels;
+	}
+
+	/**
+	 * Read labels from a detected SupportCandy role table defensively.
+	 *
+	 * @param string $table_name Sanitized table name.
+	 * @return array<int, string>
+	 */
+	private function get_role_labels_from_table( $table_name ) {
+		global $wpdb;
+
+		$table_name = preg_replace( '/[^A-Za-z0-9_]/', '', (string) $table_name );
+
+		if ( ! is_string( $table_name ) || '' === $table_name ) {
+			return array();
+		}
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Identifier is sanitized and table existence was verified.
+		$columns  = $wpdb->get_col( "SHOW COLUMNS FROM `{$table_name}`", 0 );
+		$columns  = is_array( $columns ) ? array_map( 'sanitize_key', $columns ) : array();
+		$id_key   = in_array( 'id', $columns, true ) ? 'id' : ( in_array( 'role_id', $columns, true ) ? 'role_id' : '' );
+		$name_key = '';
+
+		foreach ( array( 'label', 'name', 'title', 'role', 'slug' ) as $candidate ) {
+			if ( in_array( $candidate, $columns, true ) ) {
+				$name_key = $candidate;
+				break;
+			}
+		}
+
+		if ( '' === $id_key || '' === $name_key ) {
+			return array();
+		}
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Identifiers are sanitized and verified against SHOW COLUMNS results.
+		$rows   = $wpdb->get_results( "SELECT `{$id_key}`, `{$name_key}` FROM `{$table_name}`", ARRAY_A );
+		$labels = array();
+
+		foreach ( is_array( $rows ) ? $rows : array() as $row ) {
+			$role_id = isset( $row[ $id_key ] ) ? absint( $row[ $id_key ] ) : 0;
+			$label   = isset( $row[ $name_key ] ) ? sanitize_text_field( (string) $row[ $name_key ] ) : '';
+
+			if ( $role_id && '' !== $label ) {
+				$labels[ $role_id ] = $label;
+			}
+		}
+
+		return $labels;
+	}
+
+	/**
 	 * Get a detected SupportCandy role name when a reliable source is available.
 	 *
 	 * @param int $role_id SupportCandy role ID.
@@ -337,7 +519,9 @@ final class SCAI_Permissions_Page {
 			return '';
 		}
 
-		return '';
+		$labels = $this->get_supportcandy_role_labels();
+
+		return isset( $labels[ $role_id ] ) ? sanitize_text_field( $labels[ $role_id ] ) : '';
 	}
 
 	/**
@@ -448,10 +632,11 @@ final class SCAI_Permissions_Page {
 	/**
 	 * Render the current permission summary.
 	 *
-	 * @param array<int, int> $allowed_role_ids Allowed role IDs.
+	 * @param array<int, int>    $allowed_role_ids Allowed role IDs.
+	 * @param array<int, string> $role_labels     Role labels keyed by ID.
 	 * @return void
 	 */
-	private function render_permission_summary( array $allowed_role_ids ) {
+	private function render_permission_summary( array $allowed_role_ids, array $role_labels ) {
 		$agent_summary = $this->get_current_user_agent_summary();
 		$can_use_ai    = current_user_can( self::CAPABILITY );
 
@@ -460,23 +645,36 @@ final class SCAI_Permissions_Page {
 			$can_use_ai  = $permissions->current_user_can_use_ai( 0, 'ticket_ai_panel' );
 		}
 
-		$saved_mode     = empty( $allowed_role_ids ) ? 'all' : 'selected';
-		$selected_roles = empty( $allowed_role_ids ) ? __( 'none', 'supportcandy-ai' ) : implode( ', ', array_map( 'absint', $allowed_role_ids ) );
+		$access_mode    = empty( $allowed_role_ids )
+			? __( 'All active SupportCandy agents', 'supportcandy-ai' )
+			: __( 'Selected SupportCandy roles only', 'supportcandy-ai' );
+		$selected_roles = array();
+
+		foreach ( $allowed_role_ids as $role_id ) {
+			$selected_roles[] = $this->get_role_summary_label( $role_id, $role_labels );
+		}
+
+		$allowed_roles = empty( $selected_roles )
+			? __( 'All active SupportCandy agent roles', 'supportcandy-ai' )
+			: implode( ', ', $selected_roles );
+		$current_role  = ! empty( $agent_summary['found'] )
+			? $this->get_role_summary_label( $agent_summary['role_id'], $role_labels )
+			: __( 'Not detected', 'supportcandy-ai' );
 		?>
 		<h2><?php echo esc_html__( 'Current Permission Summary', 'supportcandy-ai' ); ?></h2>
-		<table class="widefat striped" style="max-width: 760px;">
+		<table class="widefat striped scai-permission-summary">
 			<tbody>
 				<tr>
-					<th scope="row"><?php echo esc_html__( 'Saved mode', 'supportcandy-ai' ); ?></th>
-					<td><code><?php echo esc_html( $saved_mode ); ?></code></td>
+					<th scope="row"><?php echo esc_html__( 'Access mode', 'supportcandy-ai' ); ?></th>
+					<td><?php echo esc_html( $access_mode ); ?></td>
 				</tr>
 				<tr>
-					<th scope="row"><?php echo esc_html__( 'Saved allowed role IDs', 'supportcandy-ai' ); ?></th>
-					<td><?php echo esc_html( $selected_roles ); ?></td>
+					<th scope="row"><?php echo esc_html__( 'Allowed roles', 'supportcandy-ai' ); ?></th>
+					<td><?php echo esc_html( $allowed_roles ); ?></td>
 				</tr>
 				<tr>
-					<th scope="row"><?php echo esc_html__( 'Current user agent role', 'supportcandy-ai' ); ?></th>
-					<td><?php echo esc_html( ! empty( $agent_summary['found'] ) ? (string) absint( $agent_summary['role_id'] ) : __( 'Not detected', 'supportcandy-ai' ) ); ?></td>
+					<th scope="row"><?php echo esc_html__( 'Current user role', 'supportcandy-ai' ); ?></th>
+					<td><?php echo esc_html( $current_role ); ?></td>
 				</tr>
 				<tr>
 					<th scope="row"><?php echo esc_html__( 'Current user can use AI', 'supportcandy-ai' ); ?></th>
@@ -485,6 +683,31 @@ final class SCAI_Permissions_Page {
 			</tbody>
 		</table>
 		<?php
+	}
+
+	/**
+	 * Format a role label with its numeric ID as secondary information.
+	 *
+	 * @param int                $role_id     SupportCandy role ID.
+	 * @param array<int, string> $role_labels Detected role labels.
+	 * @return string
+	 */
+	private function get_role_summary_label( $role_id, array $role_labels ) {
+		$role_id = absint( $role_id );
+		$label   = isset( $role_labels[ $role_id ] ) ? sanitize_text_field( $role_labels[ $role_id ] ) : '';
+
+		return '' !== $label
+			? sprintf(
+				/* translators: 1: SupportCandy role label, 2: role ID. */
+				__( '%1$s (ID: %2$d)', 'supportcandy-ai' ),
+				$label,
+				$role_id
+			)
+			: sprintf(
+				/* translators: %d: SupportCandy role ID. */
+				__( 'Role #%d', 'supportcandy-ai' ),
+				$role_id
+			);
 	}
 
 	/**

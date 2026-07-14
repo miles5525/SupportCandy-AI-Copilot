@@ -124,9 +124,11 @@ final class SCAI_Diagnostics_Page {
 		}
 
 		$adapter = $this->get_adapter();
+		$show_advanced_debug = $this->show_advanced_debug_tools();
 		?>
-		<div class="wrap">
-			<h1><?php echo esc_html__( 'Diagnostics', 'supportcandy-ai' ); ?></h1>
+		<div class="wrap scai-system-check-page">
+			<h1><?php echo esc_html__( 'SupportCandy AI System Check', 'supportcandy-ai' ); ?></h1>
+			<p><?php echo esc_html__( 'Use this page to verify SupportCandy AI Assistant connectivity, ticket context access, attachment readiness, and image understanding support.', 'supportcandy-ai' ); ?></p>
 
 			<?php
 			if ( ! $adapter ) {
@@ -136,11 +138,17 @@ final class SCAI_Diagnostics_Page {
 				$this->render_ticket_form();
 				$this->render_attachment_debug_form();
 				$this->render_image_understanding_debug_form();
-				$this->render_resolver_test_form();
-				$this->render_identifier_debug_form();
-				$this->render_identifier_search_form();
-				$this->render_role_capability_debug_form();
-				$this->render_supportcandy_role_definition_debug();
+
+				if ( $show_advanced_debug ) {
+					echo '<h2>' . esc_html__( 'Advanced Debug Tools', 'supportcandy-ai' ) . '</h2>';
+					$this->render_notice( __( 'These tools are intended for development and troubleshooting only.', 'supportcandy-ai' ), 'warning' );
+					$this->render_adapter_debug_details( $adapter );
+					$this->render_resolver_test_form();
+					$this->render_identifier_debug_form();
+					$this->render_identifier_search_form();
+					$this->render_role_capability_debug_form();
+					$this->render_supportcandy_role_definition_debug();
+				}
 
 				if ( $this->is_image_understanding_debug_requested() ) {
 					if ( ! $this->verify_request() ) {
@@ -154,31 +162,31 @@ final class SCAI_Diagnostics_Page {
 					} else {
 						$this->render_attachment_debug_result( $adapter );
 					}
-				} elseif ( $this->is_role_definition_debug_requested() ) {
+				} elseif ( $show_advanced_debug && $this->is_role_definition_debug_requested() ) {
 					if ( ! $this->verify_request() ) {
 						$this->render_notice( __( 'Security check failed. Please try again.', 'supportcandy-ai' ), 'error' );
 					} else {
 						$this->render_supportcandy_role_definition_debug_result();
 					}
-				} elseif ( $this->is_role_capability_debug_requested() ) {
+				} elseif ( $show_advanced_debug && $this->is_role_capability_debug_requested() ) {
 					if ( ! $this->verify_request() ) {
 						$this->render_notice( __( 'Security check failed. Please try again.', 'supportcandy-ai' ), 'error' );
 					} else {
 						$this->render_role_capability_debug_result();
 					}
-				} elseif ( $this->is_identifier_search_requested() ) {
+				} elseif ( $show_advanced_debug && $this->is_identifier_search_requested() ) {
 					if ( ! $this->verify_request() ) {
 						$this->render_notice( __( 'Security check failed. Please try again.', 'supportcandy-ai' ), 'error' );
 					} else {
 						$this->render_identifier_search_result();
 					}
-				} elseif ( $this->is_identifier_debug_requested() ) {
+				} elseif ( $show_advanced_debug && $this->is_identifier_debug_requested() ) {
 					if ( ! $this->verify_request() ) {
 						$this->render_notice( __( 'Security check failed. Please try again.', 'supportcandy-ai' ), 'error' );
 					} else {
 						$this->render_identifier_debug_result( $adapter );
 					}
-				} elseif ( $this->is_resolver_requested() ) {
+				} elseif ( $show_advanced_debug && $this->is_resolver_requested() ) {
 					if ( ! $this->verify_request() ) {
 						$this->render_notice( __( 'Security check failed. Please try again.', 'supportcandy-ai' ), 'error' );
 					} else {
@@ -222,9 +230,8 @@ final class SCAI_Diagnostics_Page {
 	private function render_status( $adapter ) {
 		$status       = $adapter->get_status();
 		$is_available = $adapter->is_available();
-		$tables       = isset( $status['tables'] ) && is_array( $status['tables'] ) ? $status['tables'] : array();
-		$classes      = isset( $status['detected_classes'] ) && is_array( $status['detected_classes'] ) ? $status['detected_classes'] : array();
 		?>
+		<div class="scai-diagnostic-section scai-system-status">
 		<h2><?php echo esc_html__( 'SupportCandy Adapter Status', 'supportcandy-ai' ); ?></h2>
 
 		<table class="widefat striped" style="max-width: 760px;">
@@ -244,6 +251,21 @@ final class SCAI_Diagnostics_Page {
 			</tbody>
 		</table>
 
+		</div>
+		<?php
+	}
+
+	/**
+	 * Render adapter internals for advanced debugging.
+	 *
+	 * @param SCAI_SupportCandy_Adapter $adapter Adapter instance.
+	 * @return void
+	 */
+	private function render_adapter_debug_details( $adapter ) {
+		$status  = $adapter->get_status();
+		$tables  = isset( $status['tables'] ) && is_array( $status['tables'] ) ? $status['tables'] : array();
+		$classes = isset( $status['detected_classes'] ) && is_array( $status['detected_classes'] ) ? $status['detected_classes'] : array();
+		?>
 		<h3><?php echo esc_html__( 'Detected Tables', 'supportcandy-ai' ); ?></h3>
 		<?php $this->render_key_value_table( $tables ); ?>
 
@@ -260,7 +282,9 @@ final class SCAI_Diagnostics_Page {
 	private function render_ticket_form() {
 		$ticket_id = $this->get_requested_ticket_id();
 		?>
-		<form method="post" action="<?php echo esc_url( admin_url( 'admin.php?page=' . self::PAGE_SLUG ) ); ?>" style="margin-top: 24px; max-width: 760px;">
+		<div class="scai-diagnostic-section scai-diagnostic-card">
+		<h2><?php echo esc_html__( 'Ticket Context Test', 'supportcandy-ai' ); ?></h2>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin.php?page=' . self::PAGE_SLUG ) ); ?>" style="margin-top: 12px; max-width: 760px;">
 			<?php wp_nonce_field( self::NONCE_ACTION, self::NONCE_NAME ); ?>
 
 			<table class="form-table" role="presentation">
@@ -285,9 +309,11 @@ final class SCAI_Diagnostics_Page {
 			</table>
 
 			<?php submit_button( __( 'Check Ticket Context', 'supportcandy-ai' ), 'secondary', self::SUBMIT_NAME ); ?>
+			<h3><?php echo esc_html__( 'AI Ticket Test', 'supportcandy-ai' ); ?></h3>
 			<?php submit_button( __( 'Generate Summary', 'supportcandy-ai' ), 'secondary', self::SUMMARY_SUBMIT_NAME, false ); ?>
 			<?php submit_button( __( 'Generate Reply', 'supportcandy-ai' ), 'secondary', self::REPLY_SUBMIT_NAME, false ); ?>
 		</form>
+		</div>
 		<?php
 	}
 
@@ -303,7 +329,8 @@ final class SCAI_Diagnostics_Page {
 			$ticket_id = $this->get_requested_ticket_id();
 		}
 		?>
-		<h2><?php echo esc_html__( 'Attachment Debug', 'supportcandy-ai' ); ?></h2>
+		<div class="scai-diagnostic-section scai-diagnostic-card">
+		<h2><?php echo esc_html__( 'Attachment Readiness Check', 'supportcandy-ai' ); ?></h2>
 
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin.php?page=' . self::PAGE_SLUG ) ); ?>" style="margin-top: 12px; max-width: 760px;">
 			<?php wp_nonce_field( self::NONCE_ACTION, self::NONCE_NAME ); ?>
@@ -320,6 +347,7 @@ final class SCAI_Diagnostics_Page {
 			<p><?php echo esc_html__( 'Inspect attachment metadata only. File contents are not opened or read.', 'supportcandy-ai' ); ?></p>
 			<?php submit_button( __( 'Inspect Attachments', 'supportcandy-ai' ), 'secondary', self::ATTACHMENT_DEBUG_SUBMIT_NAME ); ?>
 		</form>
+		</div>
 		<?php
 	}
 
@@ -347,7 +375,7 @@ final class SCAI_Diagnostics_Page {
 		$context_attachments = isset( $context['attachments'] ) && is_array( $context['attachments'] ) ? $context['attachments'] : array();
 		$direct_attachments = is_array( $direct_attachments ) ? $direct_attachments : array();
 		?>
-		<h2><?php echo esc_html__( 'Attachment Debug Result', 'supportcandy-ai' ); ?></h2>
+		<h2><?php echo esc_html__( 'Attachment Readiness Result', 'supportcandy-ai' ); ?></h2>
 
 		<table class="widefat striped" style="max-width: 1120px;">
 			<tbody>
@@ -368,10 +396,12 @@ final class SCAI_Diagnostics_Page {
 
 		<?php $this->render_attachment_debug_table( $direct_attachments ); ?>
 
-		<details style="max-width: 1120px; margin-top: 16px;">
-			<summary><strong><?php echo esc_html__( 'Raw attachment data', 'supportcandy-ai' ); ?></strong></summary>
-			<pre style="max-height: 520px; overflow: auto; padding: 12px; background: #fff; border: 1px solid #c3c4c7;"><?php echo esc_html( $this->format_attachment_debug_json( array( 'get_ticket_attachments' => $direct_attachments, 'get_ticket_context_attachments' => $context_attachments ) ) ); ?></pre>
-		</details>
+		<?php if ( $this->show_advanced_debug_tools() ) : ?>
+			<details style="max-width: 1120px; margin-top: 16px;">
+				<summary><strong><?php echo esc_html__( 'Raw attachment data', 'supportcandy-ai' ); ?></strong></summary>
+				<pre style="max-height: 520px; overflow: auto; padding: 12px; background: #fff; border: 1px solid #c3c4c7;"><?php echo esc_html( $this->format_attachment_debug_json( array( 'get_ticket_attachments' => $direct_attachments, 'get_ticket_context_attachments' => $context_attachments ) ) ); ?></pre>
+			</details>
+		<?php endif; ?>
 		<?php
 	}
 
@@ -403,7 +433,6 @@ final class SCAI_Diagnostics_Page {
 						<th><?php echo esc_html__( 'Text-readable candidate', 'supportcandy-ai' ); ?></th>
 						<th><?php echo esc_html__( 'URL', 'supportcandy-ai' ); ?></th>
 						<th><?php echo esc_html__( 'Local path present?', 'supportcandy-ai' ); ?></th>
-						<th><?php echo esc_html__( 'Local path preview', 'supportcandy-ai' ); ?></th>
 						<th><?php echo esc_html__( 'Size', 'supportcandy-ai' ); ?></th>
 						<th><?php echo esc_html__( 'Created', 'supportcandy-ai' ); ?></th>
 					</tr>
@@ -421,7 +450,6 @@ final class SCAI_Diagnostics_Page {
 							<td><?php echo esc_html( $this->format_bool( $row['text_readable'] ) ); ?></td>
 							<td><?php echo '' !== $row['url'] ? '<a href="' . esc_url( $row['url'] ) . '" target="_blank" rel="noopener noreferrer">' . esc_html( $row['url'] ) . '</a>' : esc_html__( 'Not available', 'supportcandy-ai' ); ?></td>
 							<td><?php echo esc_html( $this->format_bool( $row['path_present'] ) ); ?></td>
-							<td><code><?php echo esc_html( $row['path_preview'] ); ?></code></td>
 							<td><?php echo esc_html( (string) $row['size'] ); ?></td>
 							<td><?php echo esc_html( $row['created_at'] ); ?></td>
 						</tr>
@@ -448,7 +476,8 @@ final class SCAI_Diagnostics_Page {
 			$ticket_id = $this->get_requested_ticket_id();
 		}
 		?>
-		<h2><?php echo esc_html__( 'Image Understanding Debug', 'supportcandy-ai' ); ?></h2>
+		<div class="scai-diagnostic-section scai-diagnostic-card">
+		<h2><?php echo esc_html__( 'Image Understanding Check', 'supportcandy-ai' ); ?></h2>
 
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin.php?page=' . self::PAGE_SLUG ) ); ?>" style="margin-top: 12px; max-width: 760px;">
 			<?php wp_nonce_field( self::NONCE_ACTION, self::NONCE_NAME ); ?>
@@ -465,6 +494,7 @@ final class SCAI_Diagnostics_Page {
 			<p><?php echo esc_html__( 'Check image readiness without sending an AI request. Local paths and prepared image data are never displayed.', 'supportcandy-ai' ); ?></p>
 			<?php submit_button( __( 'Inspect Image Understanding', 'supportcandy-ai' ), 'secondary', self::IMAGE_DEBUG_SUBMIT_NAME ); ?>
 		</form>
+		</div>
 		<?php
 	}
 
@@ -501,7 +531,7 @@ final class SCAI_Diagnostics_Page {
 			}
 		}
 		?>
-		<h2><?php echo esc_html__( 'Image Understanding Debug Result', 'supportcandy-ai' ); ?></h2>
+		<h2><?php echo esc_html__( 'Image Understanding Result', 'supportcandy-ai' ); ?></h2>
 		<?php
 		$this->render_key_value_table(
 			array(
@@ -968,7 +998,7 @@ final class SCAI_Diagnostics_Page {
 		$ticket           = isset( $context['ticket'] ) && is_array( $context['ticket'] ) ? $context['ticket'] : array();
 		$threads          = isset( $context['threads'] ) && is_array( $context['threads'] ) ? $context['threads'] : array();
 		$attachments      = isset( $context['attachments'] ) && is_array( $context['attachments'] ) ? $context['attachments'] : array();
-		$context_preview  = $this->format_context_preview( $context );
+		$context_preview  = $this->show_advanced_debug_tools() ? $this->format_context_preview( $context ) : '';
 		$ticket_id        = isset( $ticket['id'] ) ? absint( $ticket['id'] ) : 0;
 		$ticket_subject   = isset( $ticket['subject'] ) ? sanitize_text_field( $ticket['subject'] ) : '';
 		$ticket_status    = isset( $ticket['status'] ) ? sanitize_text_field( $ticket['status'] ) : '';
@@ -1011,8 +1041,10 @@ final class SCAI_Diagnostics_Page {
 			</tbody>
 		</table>
 
-		<h3><?php echo esc_html__( 'Normalized Context Preview', 'supportcandy-ai' ); ?></h3>
-		<textarea class="large-text code" rows="18" readonly><?php echo esc_textarea( $context_preview ); ?></textarea>
+		<?php if ( $this->show_advanced_debug_tools() ) : ?>
+			<h3><?php echo esc_html__( 'Normalized Context Preview', 'supportcandy-ai' ); ?></h3>
+			<textarea class="large-text code" rows="18" readonly><?php echo esc_textarea( $context_preview ); ?></textarea>
+		<?php endif; ?>
 		<?php
 	}
 
@@ -1027,6 +1059,15 @@ final class SCAI_Diagnostics_Page {
 		}
 
 		return new SCAI_SupportCandy_Adapter();
+	}
+
+	/**
+	 * Determine whether developer-only diagnostic tools should be visible.
+	 *
+	 * @return bool
+	 */
+	private function show_advanced_debug_tools() {
+		return defined( 'WP_DEBUG' ) && WP_DEBUG && current_user_can( self::CAPABILITY );
 	}
 
 	/**
