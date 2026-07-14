@@ -305,6 +305,135 @@
 	margin-top: 4px;
 }
 
+#scai-ticket-ai-panel.scai-ai-popup {
+	position: fixed !important;
+	right: 24px !important;
+	bottom: 72px !important;
+	left: auto;
+	display: none;
+	flex-direction: column;
+	width: 480px;
+	max-width: calc(100vw - 48px);
+	height: clamp(420px, 55vh, 620px);
+	max-height: calc(100vh - 120px);
+	margin: 0;
+	padding: 0;
+	overflow: hidden;
+	border: 1px solid #c3c4c7;
+	border-radius: 8px;
+	background: #fff;
+	box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+	z-index: 999999 !important;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup.scai-ai-popup-open {
+	display: flex;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-ai-popup-header {
+	display: flex;
+	flex: 0 0 auto;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	min-height: 44px;
+	padding: 8px 12px;
+	border-bottom: 1px solid #dcdcde;
+	background: #fff;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-ticket-ai-title {
+	margin: 0;
+	font-size: 16px;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-ai-popup-close {
+	flex: 0 0 auto;
+	width: 30px;
+	min-width: 30px;
+	height: 30px;
+	min-height: 30px;
+	padding: 0;
+	border-color: transparent;
+	background: transparent;
+	color: #50575e;
+	font-size: 22px;
+	line-height: 1;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-ai-popup-close:hover,
+#scai-ticket-ai-panel.scai-ai-popup .scai-ai-popup-close:focus {
+	border-color: #8c8f94;
+	background: #f0f0f1;
+	color: #1d2327;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-ai-popup-body {
+	flex: 1 1 auto;
+	min-width: 0;
+	min-height: 0;
+	padding: 10px 12px 12px;
+	overflow-x: hidden;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-ticket-ai-status {
+	margin: 0 0 6px;
+	font-size: 12px;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-manual-ticket-id-wrap:empty {
+	display: none;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-ticket-ai-actions {
+	position: sticky;
+	top: -10px;
+	z-index: 2;
+	margin: 0 0 8px;
+	padding: 6px 0;
+	background: #fff;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-draft-reply {
+	height: 64px;
+	min-height: 60px;
+	max-height: 80px;
+	margin-bottom: 8px;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-ticket-ai-output {
+	min-height: 60px;
+	max-height: 140px;
+	margin: 8px 0;
+	padding: 8px;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-result-actions {
+	margin: 8px 0;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-conversation-history {
+	margin-top: 10px !important;
+	padding-top: 10px;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-conversation-history-text {
+	max-height: 160px !important;
+}
+
+@media (max-width: 782px) {
+	#scai-ticket-ai-panel.scai-ai-popup {
+		right: 12px !important;
+		bottom: 20px !important;
+		width: calc(100vw - 24px);
+		max-width: calc(100vw - 24px);
+		height: 70vh;
+		max-height: calc(100vh - 40px);
+	}
+}
+
 @media (max-width: 600px) {
 	#scai-ticket-ai-panel {
 		max-width: none;
@@ -332,4 +461,220 @@
 		flex: 1 1 auto;
 		width: auto;
 	}
+
+	#scai-ticket-ai-panel.scai-ai-popup {
+		padding: 0;
+	}
+
+	#scai-ticket-ai-panel.scai-ai-popup .scai-ai-popup-close {
+		width: 30px;
+		min-width: 30px;
+	}
+}
+
+.scai-ticket-ai-panel,
+.scai-ai-popup,
+.scai-ai-trigger {
+	--scai-primary: #2563eb;
+	--scai-primary-dark: #1d4ed8;
+	--scai-primary-soft: #eff6ff;
+	--scai-accent: #f26a21;
+	--scai-accent-dark: #c94f12;
+	--scai-accent-soft: #fff4ec;
+	--scai-surface: #fff;
+	--scai-surface-soft: #f8fbff;
+	--scai-border: #bfdbfe;
+	--scai-border-strong: #2563eb;
+	--scai-text: #1e293b;
+	--scai-muted: #64748b;
+}
+
+.scai-reply-editor-ai-anchor {
+	position: relative;
+}
+
+.scai-reply-editor-ai-anchor .scai-ai-popup-anchor-attached {
+	right: 10px;
+	bottom: 10px;
+	left: auto;
+}
+
+.scai-ai-trigger-row {
+	display: flex;
+	justify-content: flex-end;
+	width: 100%;
+	margin-top: 6px;
+}
+
+.scai-ai-popup-anchor .scai-ai-trigger {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: auto;
+	min-width: 0;
+	min-height: 32px;
+	padding: 6px 12px;
+	border: 2px solid var(--scai-border-strong) !important;
+	border-radius: 999px;
+	background: var(--scai-primary-soft) !important;
+	box-shadow: 0 2px 8px rgba(37, 99, 235, 0.22);
+	color: var(--scai-primary-dark) !important;
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 1.2;
+	text-decoration: none;
+	cursor: pointer;
+}
+
+.scai-ai-popup-anchor .scai-ai-trigger:hover,
+.scai-ai-popup-anchor .scai-ai-trigger:focus {
+	border-color: var(--scai-primary-dark) !important;
+	background: var(--scai-primary) !important;
+	box-shadow: 0 3px 10px rgba(37, 99, 235, 0.3);
+	color: #fff !important;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup {
+	border-color: var(--scai-border);
+	color: var(--scai-text);
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-ai-popup-header {
+	border-bottom-color: var(--scai-border);
+	background: var(--scai-primary-soft);
+	box-shadow: none;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-ticket-ai-title {
+	color: var(--scai-primary-dark);
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-ticket-ai-status,
+#scai-ticket-ai-panel.scai-ai-popup .scai-ticket-ai-message,
+#scai-ticket-ai-panel.scai-ai-popup .scai-conversation-history-meta,
+#scai-ticket-ai-panel.scai-ai-popup .scai-conversation-history-preview {
+	color: var(--scai-muted);
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-generate-summary,
+#scai-ticket-ai-panel.scai-ai-popup .scai-generate-reply {
+	border-color: var(--scai-primary);
+	background: var(--scai-primary);
+	color: #fff;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-generate-summary:hover,
+#scai-ticket-ai-panel.scai-ai-popup .scai-generate-summary:focus,
+#scai-ticket-ai-panel.scai-ai-popup .scai-generate-reply:hover,
+#scai-ticket-ai-panel.scai-ai-popup .scai-generate-reply:focus {
+	border-color: var(--scai-primary-dark);
+	background: var(--scai-primary-dark);
+	color: #fff;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-copy-result,
+#scai-ticket-ai-panel.scai-ai-popup .scai-insert-result,
+#scai-ticket-ai-panel.scai-ai-popup .scai-copy-history-item,
+#scai-ticket-ai-panel.scai-ai-popup .scai-insert-history-item,
+#scai-ticket-ai-panel.scai-ai-popup .scai-toggle-more-history {
+	border-color: var(--scai-border-strong);
+	background: var(--scai-primary-soft);
+	color: var(--scai-primary-dark);
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-copy-result:hover,
+#scai-ticket-ai-panel.scai-ai-popup .scai-copy-result:focus,
+#scai-ticket-ai-panel.scai-ai-popup .scai-insert-result:hover,
+#scai-ticket-ai-panel.scai-ai-popup .scai-insert-result:focus,
+#scai-ticket-ai-panel.scai-ai-popup .scai-copy-history-item:hover,
+#scai-ticket-ai-panel.scai-ai-popup .scai-copy-history-item:focus,
+#scai-ticket-ai-panel.scai-ai-popup .scai-insert-history-item:hover,
+#scai-ticket-ai-panel.scai-ai-popup .scai-insert-history-item:focus,
+#scai-ticket-ai-panel.scai-ai-popup .scai-toggle-more-history:hover,
+#scai-ticket-ai-panel.scai-ai-popup .scai-toggle-more-history:focus {
+	border-color: var(--scai-primary-dark);
+	background: var(--scai-primary);
+	color: #fff;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-improve-draft,
+#scai-ticket-ai-panel.scai-ai-popup .scai-view-history-item {
+	border-color: var(--scai-accent);
+	background: var(--scai-accent-soft);
+	color: var(--scai-accent-dark);
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-improve-draft:hover,
+#scai-ticket-ai-panel.scai-ai-popup .scai-improve-draft:focus,
+#scai-ticket-ai-panel.scai-ai-popup .scai-view-history-item:hover,
+#scai-ticket-ai-panel.scai-ai-popup .scai-view-history-item:focus {
+	border-color: var(--scai-accent-dark);
+	background: var(--scai-accent);
+	color: #fff;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-conversation-history-item {
+	border-color: var(--scai-border);
+	border-left-color: var(--scai-accent);
+	background: var(--scai-primary-soft);
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-conversation-history {
+	border-top-color: var(--scai-border);
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-conversation-history-item > strong,
+#scai-ticket-ai-panel.scai-ai-popup .scai-draft-label,
+#scai-ticket-ai-panel.scai-ai-popup .scai-manual-ticket-id-label,
+#scai-ticket-ai-panel.scai-ai-popup .scai-conversation-history-title {
+	color: var(--scai-text);
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-ticket-ai-output,
+#scai-ticket-ai-panel.scai-ai-popup .scai-conversation-history-text {
+	border-color: var(--scai-border);
+	background: var(--scai-surface-soft);
+	color: var(--scai-text);
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-conversation-history-text {
+	background: var(--scai-surface);
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-has-result {
+	background: var(--scai-primary-soft);
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-has-error,
+#scai-ticket-ai-panel.scai-ai-popup .scai-message-error {
+	border-color: var(--scai-accent);
+	background: var(--scai-accent-soft);
+	color: var(--scai-accent-dark);
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-is-loading {
+	border-color: var(--scai-primary);
+	background: var(--scai-primary-soft);
+	color: var(--scai-text);
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-message-success {
+	color: var(--scai-primary-dark);
+}
+
+#scai-ticket-ai-panel.scai-ai-popup button:focus {
+	outline-color: var(--scai-primary);
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-ai-popup-close {
+	border-color: transparent;
+	background: transparent;
+	color: var(--scai-primary-dark);
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-ai-popup-close:hover,
+#scai-ticket-ai-panel.scai-ai-popup .scai-ai-popup-close:focus {
+	border-color: var(--scai-primary);
+	background: #fff;
+	color: var(--scai-primary-dark);
 }

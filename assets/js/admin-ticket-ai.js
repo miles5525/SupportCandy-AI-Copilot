@@ -2,6 +2,8 @@
 	'use strict';
 
 	var panelId = 'scai-ticket-ai-panel';
+	var triggerId = 'scai-ticket-ai-trigger';
+	var popupPositionStorageKey = 'scai_ai_popup_position';
 	var latestResultText = '';
 	var refreshTimer = null;
 	var mutationObserver = null;
@@ -472,7 +474,10 @@
 		var confidence = detection && detection.confidence ? detection.confidence : '';
 		var showManualInput = !! ( viewState && viewState.allowManualInput ) || confidence !== 'high';
 		var panel;
+		var popupHeader;
+		var popupBody;
 		var title;
+		var closeButton;
 		var status;
 		var manualWrap;
 		var manualLabel;
@@ -491,25 +496,41 @@
 		var historySection;
 		var historyTitle;
 		var historyContent;
-		var mountPoint;
 
 		if ( existing ) {
+			ensurePopupTrigger();
 			return existing;
 		}
 
 		panel = document.createElement( 'section' );
 		panel.id = panelId;
-		panel.className = 'scai-ticket-ai-panel';
+		panel.className = 'scai-ticket-ai-panel scai-ai-popup';
 		panel.setAttribute( 'data-ticket-id', confidence === 'high' ? String( ticketId ) : '' );
 		panel.setAttribute( 'data-ticket-confidence', confidence );
-		panel.style.margin = '16px 0';
-		panel.style.padding = '12px';
-		panel.style.border = '1px solid #c3c4c7';
-		panel.style.background = '#fff';
+		panel.setAttribute( 'aria-hidden', 'true' );
+		panel.setAttribute( 'aria-labelledby', 'scai-ai-popup-title' );
+		panel.style.position = 'fixed';
+		panel.style.right = '24px';
+		panel.style.bottom = '72px';
+		panel.style.zIndex = '100000';
+		panel.style.display = 'none';
+
+		popupHeader = document.createElement( 'div' );
+		popupHeader.className = 'scai-ai-popup-header';
 
 		title = document.createElement( 'h2' );
+		title.id = 'scai-ai-popup-title';
 		title.className = 'scai-ticket-ai-title';
 		title.textContent = getString( 'panelTitle', 'SupportCandy AI' );
+
+		closeButton = createButton( 'scai-ai-popup-close', '×' );
+		closeButton.setAttribute( 'aria-label', 'Close SupportCandy AI' );
+
+		popupHeader.appendChild( title );
+		popupHeader.appendChild( closeButton );
+
+		popupBody = document.createElement( 'div' );
+		popupBody.className = 'scai-ai-popup-body';
 
 		status = document.createElement( 'p' );
 		status.className = 'scai-ticket-ai-status';
@@ -596,27 +617,399 @@
 		historySection.appendChild( historyTitle );
 		historySection.appendChild( historyContent );
 
-		panel.appendChild( title );
-		panel.appendChild( status );
-		panel.appendChild( manualWrap );
-		panel.appendChild( actions );
-		panel.appendChild( draftLabel );
-		panel.appendChild( draft );
-		panel.appendChild( improveButton );
-		panel.appendChild( output );
-		panel.appendChild( resultActions );
-		panel.appendChild( message );
-		panel.appendChild( historySection );
+		popupBody.appendChild( status );
+		popupBody.appendChild( manualWrap );
+		popupBody.appendChild( actions );
+		popupBody.appendChild( draftLabel );
+		popupBody.appendChild( draft );
+		popupBody.appendChild( improveButton );
+		popupBody.appendChild( output );
+		popupBody.appendChild( resultActions );
+		popupBody.appendChild( message );
+		popupBody.appendChild( historySection );
+
+		panel.appendChild( popupHeader );
+		panel.appendChild( popupBody );
+		document.body.appendChild( panel );
+		makePopupDraggable( panel );
+		ensurePopupTrigger();
+
+		closeButton.addEventListener( 'click', function () {
+			setPopupOpen( false );
+		} );
+
+		panel.addEventListener( 'keydown', function ( event ) {
+			if ( event.key === 'Escape' || event.keyCode === 27 ) {
+				setPopupOpen( false );
+			}
+		} );
+
+		return panel;
+	}
+
+	function ensurePopupTrigger() {
+		var existing = document.getElementById( triggerId );
+		var anchor;
+		var trigger;
+
+		if ( existing ) {
+			insertAITriggerButton( existing );
+			return existing;
+		}
+
+		anchor = document.createElement( 'div' );
+		anchor.className = 'scai-ai-popup-anchor';
+
+		trigger = createButton( 'scai-ai-trigger', '✨ AI' );
+		trigger.id = triggerId;
+		trigger.setAttribute( 'aria-controls', panelId );
+		trigger.setAttribute(
+			'aria-expanded',
+			document.getElementById( panelId ) && document.getElementById( panelId ).classList.contains( 'scai-ai-popup-open' ) ? 'true' : 'false'
+		);
+
+		anchor.appendChild( trigger );
+		insertAITriggerButton( trigger );
+
+		trigger.addEventListener( 'click', function () {
+			togglePopup();
+		} );
+
+		return trigger;
+	}
+
+	function insertAITriggerButton( trigger ) {
+		var anchor = trigger && trigger.closest ? trigger.closest( '.scai-ai-popup-anchor' ) : null;
+		var editorContainer = findReplyEditorContainer();
+
+		if ( ! anchor ) {
+			return;
+		}
+
+		if ( editorContainer ) {
+			editorContainer.classList.add( 'scai-ai-popup-host' );
+			editorContainer.classList.add( 'scai-reply-editor-ai-anchor' );
+
+			if ( window.getComputedStyle && window.getComputedStyle( editorContainer ).position === 'static' ) {
+				editorContainer.style.position = 'relative';
+			}
+
+			anchor.classList.add( 'scai-ai-popup-anchor-attached' );
+			anchor.classList.remove( 'scai-ai-trigger-row' );
+			anchor.style.position = 'absolute';
+			anchor.style.top = '';
+			anchor.style.right = '10px';
+			anchor.style.bottom = '10px';
+			anchor.style.zIndex = '20';
+			trigger.classList.add( 'scai-ai-trigger-in-editor' );
+
+			if ( anchor.parentNode !== editorContainer ) {
+				editorContainer.appendChild( anchor );
+			}
+
+			return;
+		}
+
+		anchor.classList.remove( 'scai-ai-popup-anchor-attached' );
+		anchor.classList.add( 'scai-ai-trigger-row' );
+		anchor.style.position = '';
+		anchor.style.top = '';
+		anchor.style.right = '';
+		anchor.style.bottom = '';
+		anchor.style.zIndex = '';
+		trigger.classList.remove( 'scai-ai-trigger-in-editor' );
+		insertPopupAnchorFallback( anchor );
+	}
+
+	function insertPopupAnchorFallback( anchor ) {
+		var editorAnchor = findReplyEditorAnchor();
+		var mountPoint;
+
+		if ( editorAnchor && editorAnchor.parentNode ) {
+			editorAnchor.parentNode.insertBefore( anchor, editorAnchor.nextSibling );
+			return;
+		}
 
 		mountPoint = findMountPoint();
 
 		if ( mountPoint.firstChild ) {
-			mountPoint.insertBefore( panel, mountPoint.firstChild );
+			mountPoint.insertBefore( anchor, mountPoint.firstChild );
 		} else {
-			mountPoint.appendChild( panel );
+			mountPoint.appendChild( anchor );
+		}
+	}
+
+	function findReplyEditorContainer() {
+		var editor = findReplyEditor();
+		var anchor;
+		var wrapper;
+
+		if ( ! editor || ! editor.element || isPluginDraftEditor( editor.element ) ) {
+			return null;
 		}
 
-		return panel;
+		anchor = findReplyEditorAnchor();
+
+		if ( ! anchor ) {
+			return null;
+		}
+
+		if ( editor.type === 'tinymce' ) {
+			return anchor;
+		}
+
+		if ( anchor.closest ) {
+			wrapper = anchor.closest( '.wp-editor-wrap, .tox-tinymce, .wpsc-editor, .wpsc-reply, .wpsc-it-reply, .ql-container' );
+		}
+
+		if ( wrapper && wrapper !== editor.element && ! isEditableElement( wrapper ) ) {
+			return wrapper;
+		}
+
+		return anchor.parentElement && ! isEditableElement( anchor.parentElement ) ? anchor.parentElement : null;
+	}
+
+	function findReplyEditorAnchor() {
+		var editor = findReplyEditor();
+		var iframes;
+		var index;
+
+		if ( ! editor ) {
+			return null;
+		}
+
+		if ( editor.element && isPluginDraftEditor( editor.element ) ) {
+			return null;
+		}
+
+		if ( editor.type === 'tinymce' && editor.editor && typeof editor.editor.getContainer === 'function' ) {
+			return editor.editor.getContainer();
+		}
+
+		if ( editor.element && editor.element.ownerDocument === document ) {
+			return editor.element;
+		}
+
+		if ( editor.element && editor.element.ownerDocument ) {
+			iframes = document.querySelectorAll( 'iframe' );
+
+			for ( index = 0; index < iframes.length; index++ ) {
+				if ( getIframeBody( iframes[ index ] ) === editor.element ) {
+					return iframes[ index ];
+				}
+			}
+		}
+
+		return null;
+	}
+
+	function togglePopup() {
+		var panel = document.getElementById( panelId );
+		var isOpen = !! ( panel && panel.classList.contains( 'scai-ai-popup-open' ) );
+
+		setPopupOpen( ! isOpen );
+	}
+
+	function setPopupOpen( isOpen ) {
+		var panel = document.getElementById( panelId );
+		var trigger = document.getElementById( triggerId );
+
+		if ( ! panel ) {
+			return;
+		}
+
+		panel.classList.toggle( 'scai-ai-popup-open', !! isOpen );
+		panel.style.display = isOpen ? '' : 'none';
+		panel.setAttribute( 'aria-hidden', isOpen ? 'false' : 'true' );
+
+		if ( trigger ) {
+			trigger.setAttribute( 'aria-expanded', isOpen ? 'true' : 'false' );
+		}
+
+		if ( isOpen ) {
+			resetPopupPositionIfInvalid( panel );
+			refreshConversationHistory( false );
+		}
+	}
+
+	function makePopupDraggable( popup ) {
+		var header = popup ? popup.querySelector( '.scai-ai-popup-header' ) : null;
+		var dragOffsetX = 0;
+		var dragOffsetY = 0;
+		var dragging = false;
+		var previousUserSelect = '';
+
+		if ( ! popup || ! header || popup.getAttribute( 'data-scai-draggable' ) === '1' ) {
+			return;
+		}
+
+		popup.setAttribute( 'data-scai-draggable', '1' );
+		header.style.cursor = 'move';
+		header.style.userSelect = 'none';
+		header.style.touchAction = 'none';
+
+		function startDrag( event ) {
+			var rect;
+			var position;
+
+			if ( event.button !== undefined && event.button !== 0 ) {
+				return;
+			}
+
+			if ( event.target && event.target.closest && event.target.closest( 'button, input, textarea, select, a, [contenteditable="true"]' ) ) {
+				return;
+			}
+
+			rect = popup.getBoundingClientRect();
+			dragOffsetX = event.clientX - rect.left;
+			dragOffsetY = event.clientY - rect.top;
+			dragging = true;
+			position = constrainPopupPosition( rect.left, rect.top, popup );
+			applyPopupPosition( popup, position.left, position.top );
+
+			previousUserSelect = document.body.style.userSelect;
+			document.body.style.userSelect = 'none';
+			header.classList.add( 'scai-ai-popup-dragging' );
+			event.preventDefault();
+		}
+
+		function moveDrag( event ) {
+			var position;
+
+			if ( ! dragging ) {
+				return;
+			}
+
+			position = constrainPopupPosition( event.clientX - dragOffsetX, event.clientY - dragOffsetY, popup );
+			applyPopupPosition( popup, position.left, position.top );
+			event.preventDefault();
+		}
+
+		function endDrag() {
+			var rect;
+
+			if ( ! dragging ) {
+				return;
+			}
+
+			dragging = false;
+			document.body.style.userSelect = previousUserSelect;
+			header.classList.remove( 'scai-ai-popup-dragging' );
+			rect = popup.getBoundingClientRect();
+			savePopupPosition( rect.left, rect.top );
+		}
+
+		if ( typeof window.PointerEvent === 'function' ) {
+			header.addEventListener( 'pointerdown', startDrag );
+			window.addEventListener( 'pointermove', moveDrag );
+			window.addEventListener( 'pointerup', endDrag );
+			window.addEventListener( 'pointercancel', endDrag );
+		} else {
+			header.addEventListener( 'mousedown', startDrag );
+			window.addEventListener( 'mousemove', moveDrag );
+			window.addEventListener( 'mouseup', endDrag );
+		}
+
+		popup._scaiDragCleanup = function () {
+			endDrag();
+
+			if ( typeof window.PointerEvent === 'function' ) {
+				header.removeEventListener( 'pointerdown', startDrag );
+				window.removeEventListener( 'pointermove', moveDrag );
+				window.removeEventListener( 'pointerup', endDrag );
+				window.removeEventListener( 'pointercancel', endDrag );
+			} else {
+				header.removeEventListener( 'mousedown', startDrag );
+				window.removeEventListener( 'mousemove', moveDrag );
+				window.removeEventListener( 'mouseup', endDrag );
+			}
+		};
+	}
+
+	function getSavedPopupPosition() {
+		var saved;
+		var position;
+
+		try {
+			saved = window.localStorage ? window.localStorage.getItem( popupPositionStorageKey ) : '';
+			position = saved ? JSON.parse( saved ) : null;
+		} catch ( error ) {
+			return null;
+		}
+
+		if ( ! position || ! isFinite( position.left ) || ! isFinite( position.top ) ) {
+			return null;
+		}
+
+		return {
+			left: Number( position.left ),
+			top: Number( position.top )
+		};
+	}
+
+	function savePopupPosition( left, top ) {
+		try {
+			if ( window.localStorage ) {
+				window.localStorage.setItem( popupPositionStorageKey, JSON.stringify( {
+					left: Math.round( left ),
+					top: Math.round( top )
+				} ) );
+			}
+		} catch ( error ) {
+			return;
+		}
+	}
+
+	function constrainPopupPosition( left, top, popup ) {
+		var margin = 8;
+		var rect = popup.getBoundingClientRect();
+		var viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+		var viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+		var maxLeft = Math.max( margin, viewportWidth - rect.width - margin );
+		var maxTop = Math.max( margin, viewportHeight - rect.height - margin );
+
+		return {
+			left: Math.min( Math.max( margin, Number( left ) || 0 ), maxLeft ),
+			top: Math.min( Math.max( margin, Number( top ) || 0 ), maxTop )
+		};
+	}
+
+	function applyPopupPosition( popup, left, top ) {
+		popup.style.setProperty( 'left', Math.round( left ) + 'px', 'important' );
+		popup.style.setProperty( 'top', Math.round( top ) + 'px', 'important' );
+		popup.style.setProperty( 'right', 'auto', 'important' );
+		popup.style.setProperty( 'bottom', 'auto', 'important' );
+	}
+
+	function resetPopupPositionIfInvalid( popup ) {
+		var saved = getSavedPopupPosition();
+		var rect;
+		var viewportWidth;
+		var viewportHeight;
+
+		if ( ! popup || ! saved ) {
+			return;
+		}
+
+		rect = popup.getBoundingClientRect();
+		viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+		viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+
+		if ( saved.left < 0 || saved.top < 0 || saved.left + rect.width > viewportWidth || saved.top + rect.height > viewportHeight ) {
+			try {
+				window.localStorage.removeItem( popupPositionStorageKey );
+			} catch ( error ) {
+				// Continue resetting the visible position if storage is unavailable.
+			}
+
+			popup.style.removeProperty( 'left' );
+			popup.style.removeProperty( 'top' );
+			popup.style.removeProperty( 'right' );
+			popup.style.removeProperty( 'bottom' );
+			return;
+		}
+
+		applyPopupPosition( popup, saved.left, saved.top );
 	}
 
 	function updatePanelState( panel, detection, viewState ) {
@@ -1128,7 +1521,14 @@
 	}
 
 	function isPluginElement( element ) {
-		return !! ( element && element.closest && element.closest( '#' + panelId ) );
+		return !! (
+			element &&
+			element.closest &&
+			(
+				element.closest( '#' + panelId ) ||
+				element.closest( '.scai-ai-popup-anchor' )
+			)
+		);
 	}
 
 	function isElementVisible( element ) {
@@ -1539,6 +1939,7 @@
 		}
 
 		bindEvents( panel );
+		ensurePopupTrigger();
 		refreshConversationHistory( false );
 
 		if ( ! getConfig().ajaxUrl || ! getConfig().nonce ) {
@@ -1552,9 +1953,21 @@
 
 	function removePanel() {
 		var panel = document.getElementById( panelId );
+		var trigger = document.getElementById( triggerId );
+		var anchor = trigger && trigger.closest ? trigger.closest( '.scai-ai-popup-anchor' ) : null;
+
+		if ( panel && typeof panel._scaiDragCleanup === 'function' ) {
+			panel._scaiDragCleanup();
+		}
 
 		if ( panel && panel.parentNode ) {
 			panel.parentNode.removeChild( panel );
+		}
+
+		if ( anchor && anchor.parentNode ) {
+			anchor.parentNode.removeChild( anchor );
+		} else if ( trigger && trigger.parentNode ) {
+			trigger.parentNode.removeChild( trigger );
 		}
 
 		latestResultText = '';
