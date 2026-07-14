@@ -15,6 +15,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 final class SCAI_Context_Engine {
 
 	/**
+	 * Attachment reader instance.
+	 *
+	 * @var SCAI_Attachment_Reader|null
+	 */
+	private $attachment_reader = null;
+
+	/**
 	 * Default maximum ticket threads.
 	 *
 	 * @var int
@@ -36,6 +43,13 @@ final class SCAI_Context_Engine {
 	const DEFAULT_MAX_TOTAL_CONTEXT_LENGTH = 12000;
 
 	/**
+	 * Maximum attachments included in AI context.
+	 *
+	 * @var int
+	 */
+	const MAX_CONTEXT_ATTACHMENTS = 10;
+
+	/**
 	 * Build compact AI-ready ticket context.
 	 *
 	 * @param array<string, mixed> $ticket_context Normalized ticket context from adapter.
@@ -52,9 +66,14 @@ final class SCAI_Context_Engine {
 		$threads     = isset( $ticket_context['threads'] ) && is_array( $ticket_context['threads'] )
 			? $this->sanitize_threads( $ticket_context['threads'], $args )
 			: array();
-		$attachments = isset( $ticket_context['attachments'] ) && is_array( $ticket_context['attachments'] )
-			? $this->sanitize_attachments( $ticket_context['attachments'] )
-			: array();
+		$raw_attachments = isset( $ticket_context['attachments'] ) && is_array( $ticket_context['attachments'] ) ? $ticket_context['attachments'] : array();
+		$enriched        = $this->enrich_attachments_with_text_excerpts( $raw_attachments, $args );
+		$all_attachments = $this->sanitize_attachments( $enriched['attachments'] );
+		$reported_attachment_count = isset( $ticket_context['stats']['attachment_count'] ) ? absint( $ticket_context['stats']['attachment_count'] ) : 0;
+		$attachment_count          = max( count( $all_attachments ), $reported_attachment_count );
+		$attachments               = array_slice( $all_attachments, 0, self::MAX_CONTEXT_ATTACHMENTS );
+		$reported_text_omitted     = isset( $ticket_context['stats']['text_attachment_omitted_count'] ) ? absint( $ticket_context['stats']['text_attachment_omitted_count'] ) : 0;
+		$text_attachment_omitted   = max( absint( $enriched['omitted_count'] ), $reported_text_omitted );
 
 		if ( empty( $ticket['id'] ) ) {
 			return $this->get_empty_context();
@@ -65,9 +84,11 @@ final class SCAI_Context_Engine {
 			'threads'      => $this->limit_context_size( $ticket, $threads, $attachments, $args ),
 			'attachments'  => $attachments,
 			'stats'        => array(
-				'thread_count'     => count( $threads ),
-				'attachment_count' => count( $attachments ),
-				'context_length'   => 0,
+				'thread_count'               => count( $threads ),
+				'attachment_count'           => $attachment_count,
+				'attachment_omitted_count'   => max( 0, $attachment_count - count( $attachments ) ),
+				'text_attachment_omitted_count' => $text_attachment_omitted,
+				'context_length'             => 0,
 			),
 			'generated_at' => $this->get_current_time(),
 		);
@@ -211,22 +232,253 @@ final class SCAI_Context_Engine {
 		$sanitized = array();
 
 		foreach ( $attachments as $attachment ) {
+			$normalized = $this->normalize_attachment( $attachment );
+
+			if ( empty( $normalized ) ) {
+				continue;
+			}
+
+			$sanitized[] = $normalized;
+		}
+
+		return $sanitized;
+	}
+
+	/**
+	 * Enrich safe text-like attachments with bounded excerpts.
+	 *
+	 * @param array<int, mixed>    $attachments Attachments from the adapter.
+	 * @param array<string, mixed> $args        Context arguments.
+	 * @return array{attachments: array<int, mixed>, omitted_count: int}
+	 */
+	private function enrich_attachments_with_text_excerpts( array $attachments, array $args = array() ) {
+		$reader          = $this->get_attachment_reader();
+		$read_enabled    = ! empty( $args['read_text_attachments'] );
+		$max_attachments = isset( $args['max_text_attachments'] ) ? max( 1, min( 3, absint( $args['max_text_attachments'] ) ) ) : 3;
+		$read_count      = 0;
+		$omitted_count   = 0;
+		$enriched        = array();
+
+		foreach ( $attachments as $attachment ) {
 			if ( ! is_array( $attachment ) ) {
 				continue;
 			}
 
-			$sanitized[] = array(
-				'id'         => isset( $attachment['id'] ) ? absint( $attachment['id'] ) : 0,
-				'ticket_id'  => isset( $attachment['ticket_id'] ) ? absint( $attachment['ticket_id'] ) : 0,
-				'thread_id'  => isset( $attachment['thread_id'] ) ? absint( $attachment['thread_id'] ) : 0,
-				'filename'   => isset( $attachment['filename'] ) ? sanitize_file_name( $attachment['filename'] ) : '',
-				'mime_type'  => isset( $attachment['mime_type'] ) ? sanitize_mime_type( $attachment['mime_type'] ) : '',
-				'size'       => isset( $attachment['size'] ) ? absint( $attachment['size'] ) : 0,
-				'created_at' => isset( $attachment['created_at'] ) ? sanitize_text_field( $attachment['created_at'] ) : '',
-			);
+			if ( ! empty( $attachment['content_inspected'] ) && ! empty( $attachment['content_excerpt'] ) ) {
+				$read_count++;
+				$enriched[] = $attachment;
+				continue;
+			}
+
+			if ( ! $read_enabled || ! $reader || ! $reader->can_read_attachment( $attachment ) ) {
+				$enriched[] = $attachment;
+				continue;
+			}
+
+			if ( $read_count >= $max_attachments ) {
+				$omitted_count++;
+				$enriched[] = $attachment;
+				continue;
+			}
+
+			$attachment = $this->maybe_read_attachment_excerpt( $attachment, $args );
+
+			if ( ! empty( $attachment['content_inspected'] ) ) {
+				$read_count++;
+			}
+
+			$enriched[] = $attachment;
 		}
 
-		return $sanitized;
+		return array(
+			'attachments'  => $enriched,
+			'omitted_count' => $omitted_count,
+		);
+	}
+
+	/**
+	 * Read and attach a safe text excerpt when available.
+	 *
+	 * @param array<string, mixed> $attachment Attachment metadata.
+	 * @param array<string, mixed> $args       Context arguments.
+	 * @return array<string, mixed>
+	 */
+	private function maybe_read_attachment_excerpt( array $attachment, array $args = array() ) {
+		$reader = $this->get_attachment_reader();
+
+		if ( ! $reader || ! $reader->can_read_attachment( $attachment ) ) {
+			return $attachment;
+		}
+
+		$reader_args = array();
+
+		if ( ! empty( $args['max_attachment_excerpt_chars'] ) ) {
+			$reader_args['max_excerpt_chars'] = absint( $args['max_attachment_excerpt_chars'] );
+		}
+
+		$result = $reader->read_attachment_excerpt( $attachment, $reader_args );
+
+		if ( empty( $result['success'] ) || empty( $result['excerpt'] ) ) {
+			return $attachment;
+		}
+
+		$attachment['content_excerpt']           = $this->normalize_multiline_text( $result['excerpt'] );
+		$attachment['content_inspected']         = '' !== $attachment['content_excerpt'];
+		$attachment['content_excerpt_available'] = $attachment['content_inspected'];
+		$attachment['content_truncated']         = ! empty( $result['truncated'] );
+		$attachment['lines_read']                = isset( $result['lines_read'] ) ? absint( $result['lines_read'] ) : 0;
+
+		return $attachment;
+	}
+
+	/**
+	 * Get the attachment reader when available.
+	 *
+	 * @return SCAI_Attachment_Reader|null
+	 */
+	private function get_attachment_reader() {
+		if ( $this->attachment_reader instanceof SCAI_Attachment_Reader ) {
+			return $this->attachment_reader;
+		}
+
+		if ( ! class_exists( 'SCAI_Attachment_Reader' ) ) {
+			return null;
+		}
+
+		$this->attachment_reader = new SCAI_Attachment_Reader();
+
+		return $this->attachment_reader;
+	}
+
+	/**
+	 * Normalize safe attachment metadata without inspecting file content.
+	 *
+	 * @param mixed $attachment Attachment data.
+	 * @return array<string, mixed>
+	 */
+	private function normalize_attachment( $attachment ) {
+		if ( ! is_array( $attachment ) ) {
+			return array();
+		}
+
+		$filename  = isset( $attachment['filename'] ) ? sanitize_file_name( $attachment['filename'] ) : '';
+		$filename  = '' === $filename && isset( $attachment['file_name'] ) ? sanitize_file_name( $attachment['file_name'] ) : $filename;
+		$title     = isset( $attachment['title'] ) ? sanitize_text_field( $attachment['title'] ) : '';
+		$mime_type = isset( $attachment['mime_type'] ) ? sanitize_mime_type( $attachment['mime_type'] ) : '';
+		$mime_type = '' === $mime_type && isset( $attachment['mime'] ) ? sanitize_mime_type( $attachment['mime'] ) : $mime_type;
+		$extension = $this->get_attachment_extension( $filename );
+		$type      = $this->get_attachment_type( $mime_type, $extension );
+		$url       = $this->get_safe_attachment_url( $attachment );
+		$is_image  = 0 === strpos( $mime_type, 'image/' ) || in_array( $extension, array( 'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg' ), true );
+		$is_pdf    = 'application/pdf' === $mime_type || 'pdf' === $extension;
+		$is_text   = 0 === strpos( $mime_type, 'text/' ) || in_array( $extension, array( 'txt', 'log', 'csv', 'json', 'xml', 'html', 'htm', 'md', 'ini', 'conf', 'yml', 'yaml' ), true );
+		$excerpt   = isset( $attachment['content_excerpt'] ) ? $this->normalize_multiline_text( $attachment['content_excerpt'] ) : '';
+		$inspected = ! empty( $attachment['content_inspected'] ) && '' !== $excerpt;
+		$file_size = isset( $attachment['file_size'] ) ? absint( $attachment['file_size'] ) : 0;
+		$file_size = 0 === $file_size && isset( $attachment['size'] ) ? absint( $attachment['size'] ) : $file_size;
+
+		return array(
+			'id'                         => isset( $attachment['id'] ) ? absint( $attachment['id'] ) : 0,
+			'ticket_id'                  => isset( $attachment['ticket_id'] ) ? absint( $attachment['ticket_id'] ) : 0,
+			'thread_id'                  => isset( $attachment['thread_id'] ) ? absint( $attachment['thread_id'] ) : 0,
+			'filename'                   => $filename,
+			'title'                      => $title,
+			'mime_type'                  => $mime_type,
+			'extension'                  => $extension,
+			'type'                       => $type,
+			'url'                        => $url,
+			'size'                       => $file_size,
+			'is_image'                   => $is_image,
+			'is_pdf'                     => $is_pdf,
+			'is_text'                    => $is_text,
+			'is_supported_for_future_ai' => $is_image || $is_pdf || $is_text,
+			'content_inspected'          => $inspected,
+			'content_excerpt_available'  => $inspected,
+			'content_excerpt'            => $inspected ? $excerpt : '',
+			'content_truncated'          => $inspected && ! empty( $attachment['content_truncated'] ),
+			'lines_read'                 => $inspected && isset( $attachment['lines_read'] ) ? absint( $attachment['lines_read'] ) : 0,
+			'created_at'                 => isset( $attachment['created_at'] ) ? sanitize_text_field( $attachment['created_at'] ) : '',
+		);
+	}
+
+	/**
+	 * Get a normalized file extension.
+	 *
+	 * @param string $filename Attachment filename.
+	 * @return string
+	 */
+	private function get_attachment_extension( $filename ) {
+		$extension = pathinfo( sanitize_file_name( $filename ), PATHINFO_EXTENSION );
+
+		return sanitize_key( strtolower( (string) $extension ) );
+	}
+
+	/**
+	 * Classify an attachment from its MIME type and extension.
+	 *
+	 * @param string $mime_type Attachment MIME type.
+	 * @param string $extension Attachment extension.
+	 * @return string
+	 */
+	private function get_attachment_type( $mime_type, $extension ) {
+		$mime_type = sanitize_mime_type( $mime_type );
+		$extension = sanitize_key( $extension );
+
+		if ( 0 === strpos( $mime_type, 'image/' ) || in_array( $extension, array( 'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg' ), true ) ) {
+			return 'image';
+		}
+
+		if ( 'application/pdf' === $mime_type || 'pdf' === $extension ) {
+			return 'pdf';
+		}
+
+		if ( in_array( $extension, array( 'csv', 'xls', 'xlsx', 'ods' ), true ) ) {
+			return 'spreadsheet';
+		}
+
+		if ( 0 === strpos( $mime_type, 'text/' ) || in_array( $extension, array( 'txt', 'log', 'json', 'xml' ), true ) ) {
+			return 'text';
+		}
+
+		if ( in_array( $extension, array( 'doc', 'docx', 'odt', 'rtf' ), true ) ) {
+			return 'document';
+		}
+
+		if ( 0 === strpos( $mime_type, 'audio/' ) ) {
+			return 'audio';
+		}
+
+		if ( 0 === strpos( $mime_type, 'video/' ) ) {
+			return 'video';
+		}
+
+		if ( in_array( $extension, array( 'zip', 'rar', '7z', 'tar', 'gz' ), true ) ) {
+			return 'archive';
+		}
+
+		return 'other';
+	}
+
+	/**
+	 * Get a safe public attachment URL, excluding local filesystem paths.
+	 *
+	 * @param array<string, mixed> $attachment Attachment data.
+	 * @return string
+	 */
+	private function get_safe_attachment_url( array $attachment ) {
+		foreach ( array( 'url', 'file_url', 'download_url' ) as $key ) {
+			if ( empty( $attachment[ $key ] ) || ! is_scalar( $attachment[ $key ] ) ) {
+				continue;
+			}
+
+			$url = esc_url_raw( (string) $attachment[ $key ], array( 'http', 'https' ) );
+
+			if ( '' !== $url && wp_http_validate_url( $url ) ) {
+				return $url;
+			}
+		}
+
+		return '';
 	}
 
 	/**
@@ -318,21 +570,91 @@ final class SCAI_Context_Engine {
 			$lines[] = $body;
 		}
 
-		$lines[] = '';
-		$lines[] = 'Attachments:';
+		$omitted_count      = isset( $context['stats']['attachment_omitted_count'] ) ? absint( $context['stats']['attachment_omitted_count'] ) : 0;
+		$text_omitted_count = isset( $context['stats']['text_attachment_omitted_count'] ) ? absint( $context['stats']['text_attachment_omitted_count'] ) : 0;
+		$lines[]            = '';
+		$lines[]            = $this->build_attachments_context_text( $attachments, $omitted_count, $text_omitted_count );
+
+		return implode( "\n", $lines );
+	}
+
+	/**
+	 * Build readable attachment metadata for AI context.
+	 *
+	 * @param array<int, array<string, mixed>> $attachments       Normalized attachments.
+	 * @param int                              $omitted_count      Number omitted from context.
+	 * @param int                              $text_omitted_count Readable text attachments omitted.
+	 * @return string
+	 */
+	private function build_attachments_context_text( array $attachments, $omitted_count = 0, $text_omitted_count = 0 ) {
+		$lines = array( 'Attachments:' );
 
 		if ( empty( $attachments ) ) {
-			$lines[] = '- None';
-		} else {
-			foreach ( $attachments as $attachment ) {
-				if ( ! is_array( $attachment ) ) {
-					continue;
-				}
+			$lines[] = 'None';
 
-				$filename  = isset( $attachment['filename'] ) ? sanitize_file_name( $attachment['filename'] ) : '';
-				$mime_type = isset( $attachment['mime_type'] ) ? sanitize_mime_type( $attachment['mime_type'] ) : '';
-				$lines[]   = '- ' . trim( $filename . ' ' . $mime_type );
+			return implode( "\n", $lines );
+		}
+
+		foreach ( array_slice( $attachments, 0, self::MAX_CONTEXT_ATTACHMENTS ) as $index => $attachment ) {
+			if ( ! is_array( $attachment ) ) {
+				continue;
 			}
+
+			$filename  = isset( $attachment['filename'] ) ? sanitize_file_name( $attachment['filename'] ) : '';
+			$title     = isset( $attachment['title'] ) ? sanitize_text_field( $attachment['title'] ) : '';
+			$mime_type = isset( $attachment['mime_type'] ) ? sanitize_mime_type( $attachment['mime_type'] ) : '';
+			$type      = isset( $attachment['type'] ) ? sanitize_key( $attachment['type'] ) : 'other';
+			$url       = isset( $attachment['url'] ) ? esc_url_raw( $attachment['url'], array( 'http', 'https' ) ) : '';
+			$label     = '' !== $filename ? $filename : ( '' !== $title ? $title : 'Unnamed attachment' );
+
+			$lines[] = ( absint( $index ) + 1 ) . '. ' . $label;
+			$lines[] = '   - Type: ' . $type;
+			$lines[] = '   - MIME: ' . ( '' !== $mime_type ? $mime_type : 'unknown' );
+
+			if ( '' !== $url && wp_http_validate_url( $url ) ) {
+				$lines[] = '   - URL: ' . $url;
+			}
+
+			if ( ! empty( $attachment['content_inspected'] ) && ! empty( $attachment['content_excerpt'] ) ) {
+				$lines[] = '   - Content inspected: yes';
+				$lines[] = '   - Excerpt:';
+				$lines[] = $this->build_attachment_excerpt_context_text( $attachment );
+				$lines[] = '   - Truncated: ' . ( ! empty( $attachment['content_truncated'] ) ? 'yes' : 'no' );
+			} else {
+				$lines[] = '   - Content inspected: no';
+				$lines[] = '   - Note: Attachment content has not been inspected by AI yet.';
+			}
+
+			$lines[] = '';
+		}
+
+		$omitted_count = absint( $omitted_count );
+
+		if ( 0 < $omitted_count ) {
+			$lines[] = 'Additional attachments omitted from AI context: ' . $omitted_count;
+		}
+
+		$text_omitted_count = absint( $text_omitted_count );
+
+		if ( 0 < $text_omitted_count ) {
+			$lines[] = 'Additional readable text attachments omitted from content extraction: ' . $text_omitted_count;
+		}
+
+		return rtrim( implode( "\n", $lines ) );
+	}
+
+	/**
+	 * Format a safe attachment excerpt for readable context text.
+	 *
+	 * @param array<string, mixed> $attachment Normalized attachment.
+	 * @return string
+	 */
+	private function build_attachment_excerpt_context_text( array $attachment ) {
+		$excerpt = isset( $attachment['content_excerpt'] ) ? $this->normalize_multiline_text( $attachment['content_excerpt'] ) : '';
+		$lines   = explode( "\n", $excerpt );
+
+		foreach ( $lines as $index => $line ) {
+			$lines[ $index ] = '     ' . $line;
 		}
 
 		return implode( "\n", $lines );
@@ -342,7 +664,7 @@ final class SCAI_Context_Engine {
 	 * Normalize context args.
 	 *
 	 * @param array<string, mixed> $args Context args.
-	 * @return array<string, int>
+	 * @return array<string, int|bool>
 	 */
 	private function get_args( array $args ) {
 		$args = wp_parse_args(
@@ -351,6 +673,9 @@ final class SCAI_Context_Engine {
 				'max_threads'              => self::DEFAULT_MAX_THREADS,
 				'max_thread_body_length'   => self::DEFAULT_MAX_THREAD_BODY_LENGTH,
 				'max_total_context_length' => self::DEFAULT_MAX_TOTAL_CONTEXT_LENGTH,
+				'read_text_attachments'    => true,
+				'max_text_attachments'     => 3,
+				'max_attachment_excerpt_chars' => 0,
 			)
 		);
 
@@ -358,6 +683,9 @@ final class SCAI_Context_Engine {
 			'max_threads'              => max( 1, absint( $args['max_threads'] ) ),
 			'max_thread_body_length'   => max( 1, absint( $args['max_thread_body_length'] ) ),
 			'max_total_context_length' => max( 1, absint( $args['max_total_context_length'] ) ),
+			'read_text_attachments'    => (bool) $args['read_text_attachments'],
+			'max_text_attachments'     => max( 1, min( 3, absint( $args['max_text_attachments'] ) ) ),
+			'max_attachment_excerpt_chars' => absint( $args['max_attachment_excerpt_chars'] ),
 		);
 	}
 
@@ -367,7 +695,7 @@ final class SCAI_Context_Engine {
 	 * @param array<string, mixed>             $ticket      Ticket data.
 	 * @param array<int, array<string, mixed>> $threads     Thread data.
 	 * @param array<int, array<string, mixed>> $attachments Attachment data.
-	 * @param array<string, int>               $args        Context args.
+	 * @param array<string, int|bool>          $args        Context args.
 	 * @return array<int, array<string, mixed>>
 	 */
 	private function limit_context_size( array $ticket, array $threads, array $attachments, array $args ) {
@@ -473,22 +801,28 @@ final class SCAI_Context_Engine {
 	 * @return array<string, mixed>
 	 */
 	private function sanitize_context_output( array $context, array $args ) {
+		$attachments      = isset( $context['attachments'] ) && is_array( $context['attachments'] ) ? $this->sanitize_attachments( $context['attachments'] ) : array();
+		$attachments      = array_slice( $attachments, 0, self::MAX_CONTEXT_ATTACHMENTS );
+		$reported_count   = isset( $context['stats']['attachment_count'] ) ? absint( $context['stats']['attachment_count'] ) : count( $attachments );
+		$attachment_count = max( count( $attachments ), $reported_count );
+		$text_omitted_count = isset( $context['stats']['text_attachment_omitted_count'] ) ? absint( $context['stats']['text_attachment_omitted_count'] ) : 0;
 		$output = array(
 			'ticket'       => isset( $context['ticket'] ) && is_array( $context['ticket'] ) ? $this->sanitize_ticket( $context['ticket'] ) : array(),
 			'threads'      => isset( $context['threads'] ) && is_array( $context['threads'] )
 				? $this->sanitize_threads( $context['threads'], $args )
 				: array(),
-			'attachments'  => isset( $context['attachments'] ) && is_array( $context['attachments'] ) ? $this->sanitize_attachments( $context['attachments'] ) : array(),
+			'attachments'  => $attachments,
 			'stats'        => array(
-				'thread_count'     => 0,
-				'attachment_count' => 0,
-				'context_length'   => 0,
+				'thread_count'               => 0,
+				'attachment_count'           => $attachment_count,
+				'attachment_omitted_count'   => max( 0, $attachment_count - count( $attachments ) ),
+				'text_attachment_omitted_count' => $text_omitted_count,
+				'context_length'             => 0,
 			),
 			'generated_at' => isset( $context['generated_at'] ) ? sanitize_text_field( $context['generated_at'] ) : $this->get_current_time(),
 		);
 
 		$output['stats']['thread_count']     = count( $output['threads'] );
-		$output['stats']['attachment_count'] = count( $output['attachments'] );
 		$output['stats']['context_length']   = $this->get_context_length( $output );
 
 		return $output;
@@ -505,9 +839,11 @@ final class SCAI_Context_Engine {
 			'threads'      => array(),
 			'attachments'  => array(),
 			'stats'        => array(
-				'thread_count'     => 0,
-				'attachment_count' => 0,
-				'context_length'   => 0,
+				'thread_count'               => 0,
+				'attachment_count'           => 0,
+				'attachment_omitted_count'   => 0,
+				'text_attachment_omitted_count' => 0,
+				'context_length'             => 0,
 			),
 			'generated_at' => $this->get_current_time(),
 		);
@@ -544,4 +880,3 @@ final class SCAI_Context_Engine {
 		return function_exists( 'mb_substr' ) ? mb_substr( $text, $start, $length ) : substr( $text, $start, $length );
 	}
 }
- 

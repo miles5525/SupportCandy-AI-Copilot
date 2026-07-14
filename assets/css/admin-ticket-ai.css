@@ -312,10 +312,10 @@
 	left: auto;
 	display: none;
 	flex-direction: column;
-	width: 480px;
+	width: min(680px, calc(100vw - 48px));
 	max-width: calc(100vw - 48px);
-	height: clamp(420px, 55vh, 620px);
-	max-height: calc(100vh - 120px);
+	height: clamp(560px, 75vh, 820px);
+	max-height: calc(100vh - 80px);
 	margin: 0;
 	padding: 0;
 	overflow: hidden;
@@ -462,17 +462,18 @@
 }
 
 #scai-ticket-ai-panel.scai-ai-popup .scai-draft-reply {
-	height: 64px;
-	min-height: 60px;
-	max-height: 80px;
+	height: 120px;
+	min-height: 110px;
+	max-height: 180px;
 	margin-bottom: 8px;
 }
 
 #scai-ticket-ai-panel.scai-ai-popup .scai-ticket-ai-output {
-	min-height: 60px;
-	max-height: 140px;
+	min-height: 110px;
+	max-height: 220px;
 	margin: 8px 0;
 	padding: 8px;
+	overflow-y: auto;
 }
 
 #scai-ticket-ai-panel.scai-ai-popup .scai-result-hidden {
@@ -495,11 +496,11 @@
 @media (max-width: 782px) {
 	#scai-ticket-ai-panel.scai-ai-popup {
 		right: 12px !important;
-		bottom: 20px !important;
+		bottom: 12px !important;
 		width: calc(100vw - 24px);
 		max-width: calc(100vw - 24px);
-		height: 70vh;
-		max-height: calc(100vh - 40px);
+		height: 80vh;
+		max-height: calc(100vh - 24px);
 	}
 }
 

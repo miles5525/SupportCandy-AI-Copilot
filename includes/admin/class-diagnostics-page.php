@@ -99,6 +99,13 @@ final class SCAI_Diagnostics_Page {
 	const ROLE_DEFINITION_DEBUG_SUBMIT_NAME = 'scai_supportcandy_role_definition_debug_submit';
 
 	/**
+	 * Attachment debug submit button name.
+	 *
+	 * @var string
+	 */
+	const ATTACHMENT_DEBUG_SUBMIT_NAME = 'scai_attachment_debug_submit';
+
+	/**
 	 * Render diagnostics page.
 	 *
 	 * @return void
@@ -120,13 +127,20 @@ final class SCAI_Diagnostics_Page {
 			} else {
 				$this->render_status( $adapter );
 				$this->render_ticket_form();
+				$this->render_attachment_debug_form();
 				$this->render_resolver_test_form();
 				$this->render_identifier_debug_form();
 				$this->render_identifier_search_form();
 				$this->render_role_capability_debug_form();
 				$this->render_supportcandy_role_definition_debug();
 
-				if ( $this->is_role_definition_debug_requested() ) {
+				if ( $this->is_attachment_debug_requested() ) {
+					if ( ! $this->verify_request() ) {
+						$this->render_notice( __( 'Security check failed. Please try again.', 'supportcandy-ai' ), 'error' );
+					} else {
+						$this->render_attachment_debug_result( $adapter );
+					}
+				} elseif ( $this->is_role_definition_debug_requested() ) {
 					if ( ! $this->verify_request() ) {
 						$this->render_notice( __( 'Security check failed. Please try again.', 'supportcandy-ai' ), 'error' );
 					} else {
@@ -260,6 +274,147 @@ final class SCAI_Diagnostics_Page {
 			<?php submit_button( __( 'Generate Summary', 'supportcandy-ai' ), 'secondary', self::SUMMARY_SUBMIT_NAME, false ); ?>
 			<?php submit_button( __( 'Generate Reply', 'supportcandy-ai' ), 'secondary', self::REPLY_SUBMIT_NAME, false ); ?>
 		</form>
+		<?php
+	}
+
+	/**
+	 * Render attachment diagnostics form.
+	 *
+	 * @return void
+	 */
+	private function render_attachment_debug_form() {
+		$ticket_id = $this->get_requested_attachment_ticket_id();
+
+		if ( 0 === $ticket_id ) {
+			$ticket_id = $this->get_requested_ticket_id();
+		}
+		?>
+		<h2><?php echo esc_html__( 'Attachment Debug', 'supportcandy-ai' ); ?></h2>
+
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin.php?page=' . self::PAGE_SLUG ) ); ?>" style="margin-top: 12px; max-width: 760px;">
+			<?php wp_nonce_field( self::NONCE_ACTION, self::NONCE_NAME ); ?>
+
+			<table class="form-table" role="presentation">
+				<tbody>
+					<tr>
+						<th scope="row"><label for="scai_attachment_ticket_id"><?php echo esc_html__( 'Ticket ID', 'supportcandy-ai' ); ?></label></th>
+						<td><input type="number" id="scai_attachment_ticket_id" name="scai_attachment_ticket_id" value="<?php echo esc_attr( $ticket_id ); ?>" min="1" step="1" class="small-text" /></td>
+					</tr>
+				</tbody>
+			</table>
+
+			<p><?php echo esc_html__( 'Inspect attachment metadata only. File contents are not opened or read.', 'supportcandy-ai' ); ?></p>
+			<?php submit_button( __( 'Inspect Attachments', 'supportcandy-ai' ), 'secondary', self::ATTACHMENT_DEBUG_SUBMIT_NAME ); ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * Render attachment diagnostics results.
+	 *
+	 * @param SCAI_SupportCandy_Adapter $adapter Adapter instance.
+	 * @return void
+	 */
+	private function render_attachment_debug_result( $adapter ) {
+		$ticket_id = $this->get_requested_attachment_ticket_id();
+
+		if ( 0 === $ticket_id ) {
+			$this->render_notice( __( 'Please enter a valid ticket ID.', 'supportcandy-ai' ), 'warning' );
+			return;
+		}
+
+		if ( ! method_exists( $adapter, 'get_ticket_attachments' ) || ! method_exists( $adapter, 'get_ticket_context' ) ) {
+			$this->render_notice( __( 'Attachment diagnostics are unavailable in the current adapter.', 'supportcandy-ai' ), 'error' );
+			return;
+		}
+
+		$direct_attachments = $adapter->get_ticket_attachments( $ticket_id );
+		$context            = $adapter->get_ticket_context( $ticket_id );
+		$context_attachments = isset( $context['attachments'] ) && is_array( $context['attachments'] ) ? $context['attachments'] : array();
+		$direct_attachments = is_array( $direct_attachments ) ? $direct_attachments : array();
+		?>
+		<h2><?php echo esc_html__( 'Attachment Debug Result', 'supportcandy-ai' ); ?></h2>
+
+		<table class="widefat striped" style="max-width: 1120px;">
+			<tbody>
+				<tr>
+					<th scope="row"><?php echo esc_html__( 'Ticket ID', 'supportcandy-ai' ); ?></th>
+					<td><?php echo esc_html( (string) $ticket_id ); ?></td>
+				</tr>
+				<tr>
+					<th scope="row"><?php echo esc_html__( 'Direct attachment count', 'supportcandy-ai' ); ?></th>
+					<td><?php echo esc_html( (string) count( $direct_attachments ) ); ?></td>
+				</tr>
+				<tr>
+					<th scope="row"><?php echo esc_html__( 'Context attachment count', 'supportcandy-ai' ); ?></th>
+					<td><?php echo esc_html( (string) count( $context_attachments ) ); ?></td>
+				</tr>
+			</tbody>
+		</table>
+
+		<?php $this->render_attachment_debug_table( $direct_attachments ); ?>
+
+		<details style="max-width: 1120px; margin-top: 16px;">
+			<summary><strong><?php echo esc_html__( 'Raw attachment data', 'supportcandy-ai' ); ?></strong></summary>
+			<pre style="max-height: 520px; overflow: auto; padding: 12px; background: #fff; border: 1px solid #c3c4c7;"><?php echo esc_html( $this->format_attachment_debug_json( array( 'get_ticket_attachments' => $direct_attachments, 'get_ticket_context_attachments' => $context_attachments ) ) ); ?></pre>
+		</details>
+		<?php
+	}
+
+	/**
+	 * Render normalized attachment metadata table.
+	 *
+	 * @param array<int, mixed> $attachments Attachments.
+	 * @return void
+	 */
+	private function render_attachment_debug_table( array $attachments ) {
+		?>
+		<h3><?php echo esc_html__( 'Normalized Attachment Fields', 'supportcandy-ai' ); ?></h3>
+
+		<?php if ( empty( $attachments ) ) : ?>
+			<p><?php echo esc_html__( 'No attachments were returned for this ticket.', 'supportcandy-ai' ); ?></p>
+			<?php return; ?>
+		<?php endif; ?>
+
+		<div style="max-width: 1120px; overflow-x: auto;">
+			<table class="widefat striped">
+				<thead>
+					<tr>
+						<th><?php echo esc_html__( 'Attachment ID', 'supportcandy-ai' ); ?></th>
+						<th><?php echo esc_html__( 'Thread ID', 'supportcandy-ai' ); ?></th>
+						<th><?php echo esc_html__( 'Filename / title', 'supportcandy-ai' ); ?></th>
+						<th><?php echo esc_html__( 'MIME type', 'supportcandy-ai' ); ?></th>
+						<th><?php echo esc_html__( 'Extension', 'supportcandy-ai' ); ?></th>
+						<th><?php echo esc_html__( 'Type', 'supportcandy-ai' ); ?></th>
+						<th><?php echo esc_html__( 'Text-readable candidate', 'supportcandy-ai' ); ?></th>
+						<th><?php echo esc_html__( 'URL', 'supportcandy-ai' ); ?></th>
+						<th><?php echo esc_html__( 'Local path present?', 'supportcandy-ai' ); ?></th>
+						<th><?php echo esc_html__( 'Local path preview', 'supportcandy-ai' ); ?></th>
+						<th><?php echo esc_html__( 'Size', 'supportcandy-ai' ); ?></th>
+						<th><?php echo esc_html__( 'Created', 'supportcandy-ai' ); ?></th>
+					</tr>
+				</thead>
+				<tbody>
+					<?php foreach ( $attachments as $attachment ) : ?>
+						<?php $row = $this->prepare_attachment_debug_row( $attachment ); ?>
+						<tr>
+							<td><?php echo esc_html( (string) $row['id'] ); ?></td>
+							<td><?php echo esc_html( (string) $row['thread_id'] ); ?></td>
+							<td><?php echo esc_html( $row['filename'] ); ?></td>
+							<td><?php echo esc_html( $row['mime_type'] ); ?></td>
+							<td><?php echo esc_html( $row['extension'] ); ?></td>
+							<td><?php echo esc_html( $row['type'] ); ?></td>
+							<td><?php echo esc_html( $this->format_bool( $row['text_readable'] ) ); ?></td>
+							<td><?php echo '' !== $row['url'] ? '<a href="' . esc_url( $row['url'] ) . '" target="_blank" rel="noopener noreferrer">' . esc_html( $row['url'] ) . '</a>' : esc_html__( 'Not available', 'supportcandy-ai' ); ?></td>
+							<td><?php echo esc_html( $this->format_bool( $row['path_present'] ) ); ?></td>
+							<td><code><?php echo esc_html( $row['path_preview'] ); ?></code></td>
+							<td><?php echo esc_html( (string) $row['size'] ); ?></td>
+							<td><?php echo esc_html( $row['created_at'] ); ?></td>
+						</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+		</div>
 		<?php
 	}
 
@@ -681,6 +836,19 @@ final class SCAI_Diagnostics_Page {
 	}
 
 	/**
+	 * Get requested ticket ID for attachment diagnostics.
+	 *
+	 * @return int
+	 */
+	private function get_requested_attachment_ticket_id() {
+		if ( ! isset( $_POST['scai_attachment_ticket_id'] ) || ! is_scalar( $_POST['scai_attachment_ticket_id'] ) ) {
+			return 0;
+		}
+
+		return absint( wp_unslash( $_POST['scai_attachment_ticket_id'] ) );
+	}
+
+	/**
 	 * Get requested ticket identifier.
 	 *
 	 * @return string
@@ -728,6 +896,15 @@ final class SCAI_Diagnostics_Page {
 		return isset( $_POST[ self::SUBMIT_NAME ] )
 			|| $this->is_summary_requested()
 			|| $this->is_reply_requested();
+	}
+
+	/**
+	 * Determine whether attachment debugging was requested.
+	 *
+	 * @return bool
+	 */
+	private function is_attachment_debug_requested() {
+		return isset( $_POST[ self::ATTACHMENT_DEBUG_SUBMIT_NAME ] );
 	}
 
 	/**
@@ -920,6 +1097,179 @@ final class SCAI_Diagnostics_Page {
 		$json    = wp_json_encode( $context, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
 
 		return is_string( $json ) ? $json : '{}';
+	}
+
+	/**
+	 * Prepare one attachment row for diagnostics display.
+	 *
+	 * @param mixed $attachment Attachment data.
+	 * @return array<string, mixed>
+	 */
+	private function prepare_attachment_debug_row( $attachment ) {
+		$attachment = is_array( $attachment ) ? $attachment : array();
+		$filename   = isset( $attachment['filename'] ) && is_scalar( $attachment['filename'] ) ? sanitize_file_name( $attachment['filename'] ) : '';
+		$title      = isset( $attachment['title'] ) && is_scalar( $attachment['title'] ) ? sanitize_text_field( $attachment['title'] ) : '';
+		$filename   = '' !== $filename ? $filename : $title;
+		$extension  = sanitize_key( strtolower( (string) pathinfo( $filename, PATHINFO_EXTENSION ) ) );
+		$mime_type  = isset( $attachment['mime_type'] ) && is_scalar( $attachment['mime_type'] ) ? sanitize_mime_type( $attachment['mime_type'] ) : '';
+		$type       = $this->classify_attachment_for_debug( $mime_type, $extension );
+		$path       = $this->find_attachment_path_value( $attachment );
+		$url        = isset( $attachment['url'] ) && is_scalar( $attachment['url'] ) ? esc_url_raw( $attachment['url'], array( 'http', 'https' ) ) : '';
+
+		return array(
+			'id'            => isset( $attachment['id'] ) ? absint( $attachment['id'] ) : 0,
+			'thread_id'     => isset( $attachment['thread_id'] ) ? absint( $attachment['thread_id'] ) : 0,
+			'filename'      => $filename,
+			'mime_type'     => $mime_type,
+			'extension'     => $extension,
+			'type'          => $type,
+			'text_readable' => in_array( $extension, array( 'txt', 'log', 'csv', 'json', 'xml', 'html', 'md' ), true ),
+			'url'           => $url,
+			'path_present'  => '' !== $path,
+			'path_preview'  => $this->mask_attachment_path( $path ),
+			'size'          => isset( $attachment['size'] ) ? absint( $attachment['size'] ) : 0,
+			'created_at'    => isset( $attachment['created_at'] ) && is_scalar( $attachment['created_at'] ) ? sanitize_text_field( $attachment['created_at'] ) : '',
+		);
+	}
+
+	/**
+	 * Classify an attachment for diagnostics.
+	 *
+	 * @param string $mime_type MIME type.
+	 * @param string $extension File extension.
+	 * @return string
+	 */
+	private function classify_attachment_for_debug( $mime_type, $extension ) {
+		$mime_type = sanitize_mime_type( $mime_type );
+		$extension = sanitize_key( $extension );
+
+		if ( 0 === strpos( $mime_type, 'image/' ) || in_array( $extension, array( 'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg' ), true ) ) {
+			return 'image';
+		}
+
+		if ( 'application/pdf' === $mime_type || 'pdf' === $extension ) {
+			return 'pdf';
+		}
+
+		if ( in_array( $extension, array( 'csv', 'xls', 'xlsx', 'ods' ), true ) ) {
+			return 'spreadsheet';
+		}
+
+		if ( in_array( $extension, array( 'txt', 'log', 'json', 'xml', 'html', 'md' ), true ) || 0 === strpos( $mime_type, 'text/' ) ) {
+			return 'text';
+		}
+
+		if ( in_array( $extension, array( 'doc', 'docx', 'odt', 'rtf' ), true ) ) {
+			return 'document';
+		}
+
+		if ( in_array( $extension, array( 'zip', 'rar', '7z', 'tar', 'gz' ), true ) ) {
+			return 'archive';
+		}
+
+		return 'other';
+	}
+
+	/**
+	 * Find a path-like value without accessing the filesystem.
+	 *
+	 * @param array<string|int, mixed> $data Attachment data.
+	 * @return string
+	 */
+	private function find_attachment_path_value( array $data ) {
+		foreach ( $data as $key => $value ) {
+			if ( is_string( $key ) && $this->is_attachment_path_key( $key ) && is_scalar( $value ) ) {
+				return sanitize_text_field( (string) $value );
+			}
+
+			if ( is_array( $value ) ) {
+				$path = $this->find_attachment_path_value( $value );
+
+				if ( '' !== $path ) {
+					return $path;
+				}
+			}
+		}
+
+		return '';
+	}
+
+	/**
+	 * Mask an attachment path to its final directory segments.
+	 *
+	 * @param string $path Local path.
+	 * @return string
+	 */
+	private function mask_attachment_path( $path ) {
+		$path = str_replace( '\\', '/', sanitize_text_field( (string) $path ) );
+
+		if ( '' === $path ) {
+			return '';
+		}
+
+		$parts = array_values( array_filter( explode( '/', $path ), 'strlen' ) );
+		$parts = array_slice( $parts, -3 );
+
+		return '.../' . implode( '/', array_map( 'sanitize_file_name', $parts ) );
+	}
+
+	/**
+	 * Format safe attachment debug data as pretty JSON.
+	 *
+	 * @param array<string, mixed> $data Debug data.
+	 * @return string
+	 */
+	private function format_attachment_debug_json( array $data ) {
+		$json = wp_json_encode( $this->sanitize_attachment_debug_data( $data ), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+
+		return is_string( $json ) ? $json : '{}';
+	}
+
+	/**
+	 * Recursively sanitize attachment debug data and mask paths.
+	 *
+	 * @param mixed $data Debug data.
+	 * @return mixed
+	 */
+	private function sanitize_attachment_debug_data( $data ) {
+		if ( is_array( $data ) ) {
+			$clean = array();
+
+			foreach ( $data as $key => $value ) {
+				$clean_key = is_string( $key ) ? sanitize_key( $key ) : absint( $key );
+
+				if ( is_string( $clean_key ) && $this->is_attachment_path_key( $clean_key ) ) {
+					$clean[ $clean_key ] = is_scalar( $value ) ? $this->mask_attachment_path( (string) $value ) : '';
+					continue;
+				}
+
+				if ( is_string( $clean_key ) && $this->is_sensitive_preview_key( $clean_key ) ) {
+					continue;
+				}
+
+				$clean[ $clean_key ] = $this->sanitize_attachment_debug_data( $value );
+			}
+
+			return $clean;
+		}
+
+		if ( is_bool( $data ) || is_int( $data ) || is_float( $data ) || null === $data ) {
+			return $data;
+		}
+
+		return sanitize_textarea_field( (string) $data );
+	}
+
+	/**
+	 * Determine whether a field contains a local path.
+	 *
+	 * @param string $key Field key.
+	 * @return bool
+	 */
+	private function is_attachment_path_key( $key ) {
+		$key = sanitize_key( $key );
+
+		return in_array( $key, array( 'file_path', 'filepath', 'local_path', 'path', 'private_path' ), true );
 	}
 
 	/**

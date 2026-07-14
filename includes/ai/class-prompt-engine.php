@@ -21,6 +21,7 @@ final class SCAI_Prompt_Engine {
 	 * @return string
 	 */
 	public function build_system_instructions( array $args = array() ) {
+		$attachment_instructions = $this->build_attachment_handling_instructions( $args );
 		$instructions = implode(
 			"\n",
 			array(
@@ -37,6 +38,10 @@ final class SCAI_Prompt_Engine {
 
 		if ( '' !== $company_instructions ) {
 			$instructions .= "\n\nCompany instructions:\n" . $company_instructions;
+		}
+
+		if ( '' !== $attachment_instructions ) {
+			$instructions .= "\n\nAttachment handling:\n" . $attachment_instructions;
 		}
 
 		/**
@@ -76,6 +81,7 @@ final class SCAI_Prompt_Engine {
 				'- Customer sentiment',
 				'- Important details',
 				'- Suggested next action',
+				'Use useful facts from inspected text excerpts, and clearly separate them from uninspected attachment metadata.',
 				'Use only the ticket context below.',
 				'',
 				'Ticket context:',
@@ -127,6 +133,8 @@ final class SCAI_Prompt_Engine {
 				$style_instructions,
 				'Avoid making unsupported promises.',
 				'Ask for missing information if needed.',
+				'Use relevant facts from inspected text excerpts; do not ask for the same error or tell the agent to review the file unless the excerpt is insufficient.',
+				'Do not claim to have seen or read an attachment unless the context says its content was inspected.',
 				'Use ticket context only.',
 				'Return only the reply text.',
 				'',
@@ -180,6 +188,7 @@ final class SCAI_Prompt_Engine {
 			$style_instructions,
 			'Avoid adding unsupported facts.',
 			'Do not add unsupported promises or actions.',
+			'Facts in inspected text excerpts are supported context; do not add other attachment-content claims.',
 			'If essential information is missing, ask for it rather than guessing.',
 			'Return only the improved reply text.',
 			'',
@@ -218,6 +227,41 @@ final class SCAI_Prompt_Engine {
 				)
 			)
 		);
+	}
+
+	/**
+	 * Build instructions for honest handling of attachment metadata.
+	 *
+	 * @param array<string, mixed> $args Instruction args.
+	 * @return string
+	 */
+	private function build_attachment_handling_instructions( array $args = array() ) {
+		$instructions = implode(
+			"\n",
+			array(
+				'Ticket attachments may be listed as metadata, including filename, type, MIME type, URL, and content_inspected.',
+				'When content_inspected is true and an excerpt is provided, treat that excerpt as inspected ticket context and use its relevant facts.',
+				'Refer to such evidence as "the attached log/text file includes" or "the provided excerpt shows".',
+				'Do not tell the agent or customer to review or provide information already present in an inspected excerpt.',
+				'If an inspected excerpt is truncated or insufficient, use only what it shows and note that the full file may contain more details.',
+				'When content_inspected is false, do not claim to have seen, read, analyzed, or understood the attachment content.',
+				'For an uninspected attachment, you may mention that it exists and ask for relevant details when needed.',
+				'For screenshots or images, say the file is attached but its image content has not been inspected.',
+				'For PDFs or documents, say the file is attached but its document content has not been inspected.',
+				'For logs or text files, use only an inspected excerpt or actual text present in the ticket thread or context.',
+				'Do not say "I can see from your screenshot" unless content_inspected is true.',
+			)
+		);
+
+		/**
+		 * Filter attachment-handling prompt instructions.
+		 *
+		 * @param string               $instructions Attachment instructions.
+		 * @param array<string, mixed> $args         Instruction args.
+		 */
+		$instructions = apply_filters( 'scai_prompt_attachment_instructions', $instructions, $args );
+
+		return $this->normalize_multiline_text( $instructions );
 	}
 
 	/**

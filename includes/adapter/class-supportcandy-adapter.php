@@ -917,16 +917,18 @@ final class SCAI_SupportCandy_Adapter {
 	 * @return array<string, mixed>
 	 */
 	private function normalize_attachment_row( array $row ) {
-		$filename = isset( $row['name'] ) ? sanitize_file_name( $row['name'] ) : '';
-		$filetype = wp_check_filetype( $filename );
+		$filename   = isset( $row['name'] ) ? sanitize_file_name( $row['name'] ) : '';
+		$filetype   = wp_check_filetype( $filename );
+		$resolution = $this->resolve_attachment_local_path( $row );
+		$file_size  = $resolution['exists'] ? $this->get_attachment_file_size( $resolution['path'] ) : 0;
 
 		return array(
-			'id'         => isset( $row['id'] ) ? absint( $row['id'] ) : 0,
-			'ticket_id'  => isset( $row['ticket_id'] ) ? absint( $row['ticket_id'] ) : 0,
-			'thread_id'  => isset( $row['source_id'] ) ? absint( $row['source_id'] ) : 0,
-			'filename'   => $filename,
-			'mime_type'  => ! empty( $filetype['type'] ) ? sanitize_mime_type( $filetype['type'] ) : '',
-			'url'        => esc_url_raw(
+			'id'                => isset( $row['id'] ) ? absint( $row['id'] ) : 0,
+			'ticket_id'         => isset( $row['ticket_id'] ) ? absint( $row['ticket_id'] ) : 0,
+			'thread_id'         => isset( $row['source_id'] ) ? absint( $row['source_id'] ) : 0,
+			'filename'          => $filename,
+			'mime_type'         => ! empty( $filetype['type'] ) ? sanitize_mime_type( $filetype['type'] ) : '',
+			'url'               => esc_url_raw(
 				add_query_arg(
 					array(
 						'wpsc_attachment' => isset( $row['id'] ) ? absint( $row['id'] ) : 0,
@@ -934,10 +936,174 @@ final class SCAI_SupportCandy_Adapter {
 					home_url( '/' )
 				)
 			),
-			'size'       => 0,
-			'created_at' => isset( $row['date_created'] ) ? sanitize_text_field( $row['date_created'] ) : '',
-			'raw'        => $this->sanitize_raw_row( $row ),
+			'size'              => $file_size,
+			'file_size'         => $file_size,
+			'local_path'        => $resolution['path'],
+			'local_path_exists' => $resolution['exists'],
+			'storage_source'    => $resolution['source'],
+			'created_at'        => isset( $row['date_created'] ) ? sanitize_text_field( $row['date_created'] ) : '',
+			'raw'               => $this->sanitize_raw_row( $row ),
 		);
+	}
+
+	/**
+	 * Resolve a SupportCandy attachment to a safe local file path.
+	 *
+	 * @param array<string, mixed> $attachment Attachment database row.
+	 * @return array{path: string, exists: bool, source: string}
+	 */
+	private function resolve_attachment_local_path( array $attachment ) {
+		$candidates = $this->get_possible_attachment_paths( $attachment );
+
+		foreach ( $candidates as $candidate ) {
+			if ( ! is_array( $candidate ) || empty( $candidate['path'] ) || ! is_scalar( $candidate['path'] ) ) {
+				continue;
+			}
+
+			$path = wp_normalize_path( (string) $candidate['path'] );
+
+			if ( ! $this->is_safe_attachment_path( $path ) || ! is_file( $path ) ) {
+				continue;
+			}
+
+			$real_path = realpath( $path );
+
+			if ( false === $real_path || ! $this->is_safe_attachment_path( $real_path ) ) {
+				continue;
+			}
+
+			return array(
+				'path'   => wp_normalize_path( $real_path ),
+				'exists' => true,
+				'source' => isset( $candidate['source'] ) ? sanitize_key( $candidate['source'] ) : 'supportcandy_upload_dir',
+			);
+		}
+
+		$filtered_path = apply_filters( 'scai_supportcandy_attachment_local_path', '', $attachment, $candidates );
+
+		if ( is_scalar( $filtered_path ) && '' !== (string) $filtered_path ) {
+			$filtered_path = wp_normalize_path( (string) $filtered_path );
+
+			if ( $this->is_safe_attachment_path( $filtered_path ) && is_file( $filtered_path ) ) {
+				$real_path = realpath( $filtered_path );
+
+				if ( false !== $real_path && $this->is_safe_attachment_path( $real_path ) ) {
+					return array(
+						'path'   => wp_normalize_path( $real_path ),
+						'exists' => true,
+						'source' => 'filtered',
+					);
+				}
+			}
+		}
+
+		return array(
+			'path'   => '',
+			'exists' => false,
+			'source' => 'not_found',
+		);
+	}
+
+	/**
+	 * Build possible local paths from SupportCandy attachment metadata.
+	 *
+	 * @param array<string, mixed> $attachment Attachment database row.
+	 * @return array<int, array{path: string, source: string}>
+	 */
+	private function get_possible_attachment_paths( array $attachment ) {
+		$upload_dir = wp_upload_dir();
+		$base_dir   = ! empty( $upload_dir['basedir'] ) ? wp_normalize_path( $upload_dir['basedir'] ) : '';
+		$file_path  = isset( $attachment['file_path'] ) && is_scalar( $attachment['file_path'] ) ? wp_normalize_path( (string) $attachment['file_path'] ) : '';
+		$filename   = isset( $attachment['name'] ) && is_scalar( $attachment['name'] ) ? basename( wp_normalize_path( (string) $attachment['name'] ) ) : '';
+		$candidates = array();
+
+		if ( '' !== $base_dir && '' !== $file_path && false === strpos( $file_path, '../' ) ) {
+			$candidates[] = array(
+				'path'   => trailingslashit( $base_dir ) . ltrim( $file_path, '/' ),
+				'source' => 'supportcandy_upload_dir',
+			);
+
+			if ( 0 === strpos( strtolower( $file_path ), strtolower( trailingslashit( $base_dir ) ) ) ) {
+				$candidates[] = array(
+					'path'   => $file_path,
+					'source' => 'supportcandy_class',
+				);
+			}
+		}
+
+		if ( '' !== $base_dir && '' !== $filename && ! empty( $attachment['date_created'] ) && is_scalar( $attachment['date_created'] ) ) {
+			$timestamp = strtotime( sanitize_text_field( (string) $attachment['date_created'] ) );
+
+			if ( false !== $timestamp ) {
+				$candidates[] = array(
+					'path'   => trailingslashit( $base_dir ) . 'wpsc/' . gmdate( 'Y/m', $timestamp ) . '/' . sanitize_file_name( $filename ),
+					'source' => 'wordpress_upload_dir',
+				);
+			}
+		}
+
+		$candidates = apply_filters( 'scai_supportcandy_attachment_possible_paths', $candidates, $attachment, $upload_dir );
+
+		return is_array( $candidates ) ? $candidates : array();
+	}
+
+	/**
+	 * Determine whether a path is inside an allowed attachment base directory.
+	 *
+	 * @param string $path Candidate path.
+	 * @return bool
+	 */
+	private function is_safe_attachment_path( $path ) {
+		$path = wp_normalize_path( (string) $path );
+
+		if ( '' === $path || false !== strpos( $path, '../' ) || false !== strpos( $path, "\0" ) ) {
+			return false;
+		}
+
+		$upload_dir   = wp_upload_dir();
+		$allowed_dirs = ! empty( $upload_dir['basedir'] ) ? array( $upload_dir['basedir'], trailingslashit( $upload_dir['basedir'] ) . 'wpsc' ) : array();
+		$allowed_dirs = apply_filters( 'scai_supportcandy_attachment_allowed_base_dirs', $allowed_dirs, $upload_dir );
+
+		if ( ! is_array( $allowed_dirs ) ) {
+			return false;
+		}
+
+		foreach ( $allowed_dirs as $allowed_dir ) {
+			if ( ! is_scalar( $allowed_dir ) || '' === (string) $allowed_dir ) {
+				continue;
+			}
+
+			$base = untrailingslashit( wp_normalize_path( (string) $allowed_dir ) );
+
+			if ( '' === $base ) {
+				continue;
+			}
+
+			$path_comparison = DIRECTORY_SEPARATOR === '\\' ? strtolower( $path ) : $path;
+			$base_comparison = DIRECTORY_SEPARATOR === '\\' ? strtolower( $base ) : $base;
+
+			if ( $path_comparison === $base_comparison || 0 === strpos( $path_comparison, trailingslashit( $base_comparison ) ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Get attachment size without reading file contents.
+	 *
+	 * @param string $path Safe local file path.
+	 * @return int
+	 */
+	private function get_attachment_file_size( $path ) {
+		if ( ! $this->is_safe_attachment_path( $path ) || ! is_file( $path ) ) {
+			return 0;
+		}
+
+		$size = filesize( $path );
+
+		return false === $size ? 0 : absint( $size );
 	}
 
 	/**
