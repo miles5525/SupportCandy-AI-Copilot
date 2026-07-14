@@ -22,6 +22,7 @@ final class SCAI_Prompt_Engine {
 	 */
 	public function build_system_instructions( array $args = array() ) {
 		$attachment_instructions = $this->build_attachment_handling_instructions( $args );
+		$speaker_instructions    = $this->build_speaker_role_instructions( $args );
 		$instructions = implode(
 			"\n",
 			array(
@@ -42,6 +43,10 @@ final class SCAI_Prompt_Engine {
 
 		if ( '' !== $attachment_instructions ) {
 			$instructions .= "\n\nAttachment handling:\n" . $attachment_instructions;
+		}
+
+		if ( '' !== $speaker_instructions ) {
+			$instructions .= "\n\nConversation roles:\n" . $speaker_instructions;
 		}
 
 		/**
@@ -76,12 +81,21 @@ final class SCAI_Prompt_Engine {
 			array(
 				'Review the ticket context and return a factual support-agent summary.',
 				$length_instructions[ $options['length'] ],
-				'Include:',
-				'- Short issue summary',
-				'- Customer sentiment',
-				'- Important details',
-				'- Suggested next action',
-				'Use useful facts from inspected text excerpts, and clearly separate them from uninspected attachment metadata.',
+				'Use these section headings in this order:',
+				'1. Issue Summary',
+				'2. Customer Sentiment',
+				'3. Important Details',
+				'4. Attachments',
+				'5. Suggested Next Action',
+				'When ticket attachments exist, always include the Attachments section and list each attachment separately by filename and type.',
+				'For every listed attachment, state whether its content was inspected.',
+				'For an inspected text or log attachment, summarize useful facts supported by its provided excerpt.',
+				'For an uninspected image, PDF, or other attachment, clearly state that its content was not inspected.',
+				'Do not claim an image was inspected unless the request explicitly indicates that image content was provided to the model.',
+				'Do not place attachment details only under Suggested Next Action; keep the dedicated Attachments section.',
+				'If there are no ticket attachments, the Attachments section may be omitted or say "None mentioned."',
+				'Base Customer Sentiment mainly on messages labelled Customer, not on previous Support Agent messages.',
+				'Summarize previous agent replies separately only when relevant, and treat Internal Notes as private support context.',
 				'Use only the ticket context below.',
 				'',
 				'Ticket context:',
@@ -135,6 +149,9 @@ final class SCAI_Prompt_Engine {
 				'Ask for missing information if needed.',
 				'Use relevant facts from inspected text excerpts; do not ask for the same error or tell the agent to review the file unless the excerpt is insufficient.',
 				'Do not claim to have seen or read an attachment unless the context says its content was inspected.',
+				'Address the latest unresolved Customer message or request; do not reply to a Support Agent message as though it came from the customer.',
+				'Use Internal Notes only as private guidance and never reveal or quote them in the customer-facing reply.',
+				'If Customer messages show repeated follow-ups or frustration about a delay, acknowledge that politely.',
 				'Use ticket context only.',
 				'Return only the reply text.',
 				'',
@@ -189,6 +206,8 @@ final class SCAI_Prompt_Engine {
 			'Avoid adding unsupported facts.',
 			'Do not add unsupported promises or actions.',
 			'Facts in inspected text excerpts are supported context; do not add other attachment-content claims.',
+			'Use speaker labels to preserve the agent draft intent and distinguish Customer requests from previous Support Agent replies.',
+			'Use Internal Notes only as private guidance; do not add or quote their content directly in the customer-facing reply.',
 			'If essential information is missing, ask for it rather than guessing.',
 			'Return only the improved reply text.',
 			'',
@@ -227,6 +246,34 @@ final class SCAI_Prompt_Engine {
 				)
 			)
 		);
+	}
+
+	/**
+	 * Build concise instructions for interpreting conversation speaker labels.
+	 *
+	 * @param array<string, mixed> $args Instruction args.
+	 * @return string
+	 */
+	private function build_speaker_role_instructions( array $args = array() ) {
+		$instructions = implode(
+			"\n",
+			array(
+				'Messages labelled Customer describe the customer issue, sentiment, follow-ups, and requests.',
+				'Messages labelled Support Agent are previous support responses, not customer complaints or follow-ups.',
+				'Internal Notes are private support context: use them for reasoning but never quote or reveal them to the customer.',
+				'Use System and Unknown Sender messages cautiously and do not infer an unsupported speaker or intent.',
+			)
+		);
+
+		/**
+		 * Filter conversation speaker-role instructions.
+		 *
+		 * @param string               $instructions Speaker-role instructions.
+		 * @param array<string, mixed> $args         Instruction args.
+		 */
+		$instructions = apply_filters( 'scai_prompt_speaker_role_instructions', $instructions, $args );
+
+		return $this->normalize_multiline_text( $instructions );
 	}
 
 	/**

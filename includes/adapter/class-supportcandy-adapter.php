@@ -29,6 +29,20 @@ final class SCAI_SupportCandy_Adapter {
 	private $wpdb;
 
 	/**
+	 * Cached SupportCandy agents indexed by customer ID.
+	 *
+	 * @var array<int, array<string, mixed>>
+	 */
+	private $agent_customer_cache = array();
+
+	/**
+	 * Cached SupportCandy agents indexed by WordPress user ID.
+	 *
+	 * @var array<int, array<string, mixed>>
+	 */
+	private $agent_user_cache = array();
+
+	/**
 	 * Constructor.
 	 *
 	 * @param wpdb|null $wpdb_instance Optional database instance.
@@ -257,11 +271,13 @@ final class SCAI_SupportCandy_Adapter {
 
 		$has_thread_customer_column = $this->table_has_column( $threads_table, 'customer' );
 		$has_customers_table        = $this->table_exists( $customers_table ) && $this->table_has_column( $customers_table, 'id' );
+		$ticket_customer_id         = $this->get_ticket_customer_id( $ticket_id );
 		$order_column               = $this->table_has_column( $threads_table, 'date_created' ) ? 'th.date_created' : 'th.id';
 		$select = array(
 			'th.*',
 			$has_thread_customer_column && $has_customers_table && $this->table_has_column( $customers_table, 'name' ) ? 'c.name AS author_name' : "'' AS author_name",
 			$has_thread_customer_column && $has_customers_table && $this->table_has_column( $customers_table, 'email' ) ? 'c.email AS author_email' : "'' AS author_email",
+			$has_thread_customer_column && $has_customers_table && $this->table_has_column( $customers_table, 'user' ) ? 'c.user AS author_user_id' : '0 AS author_user_id',
 		);
 		$join = $has_thread_customer_column && $has_customers_table ? "LEFT JOIN `{$customers_table}` c ON c.id = th.customer" : '';
 
@@ -285,7 +301,12 @@ final class SCAI_SupportCandy_Adapter {
 
 		foreach ( $rows as $row ) {
 			if ( is_array( $row ) ) {
-				$threads[] = $this->normalize_thread_row( $row );
+				$threads[] = $this->normalize_thread_row(
+					$row,
+					array(
+						'customer_id' => $ticket_customer_id,
+					)
+				);
 			}
 		}
 
@@ -465,6 +486,7 @@ final class SCAI_SupportCandy_Adapter {
 			'threads'          => $this->wpdb->prefix . 'psmsc_threads',
 			'archived_threads' => $this->wpdb->prefix . 'psmsc_archived_threads',
 			'customers'        => $this->wpdb->prefix . 'psmsc_customers',
+			'agents'           => $this->wpdb->prefix . 'psmsc_agents',
 			'statuses'         => $this->wpdb->prefix . 'psmsc_statuses',
 			'categories'       => $this->wpdb->prefix . 'psmsc_categories',
 			'priorities'       => $this->wpdb->prefix . 'psmsc_priorities',
@@ -891,11 +913,13 @@ final class SCAI_SupportCandy_Adapter {
 	/**
 	 * Normalize a thread row.
 	 *
-	 * @param array<string, mixed> $row Raw row.
+	 * @param array<string, mixed> $row    Raw row.
+	 * @param array<string, mixed> $ticket Ticket identity data.
 	 * @return array<string, mixed>
 	 */
-	private function normalize_thread_row( array $row ) {
+	private function normalize_thread_row( array $row, array $ticket = array() ) {
 		$attachment_ids = $this->parse_attachment_ids( isset( $row['attachments'] ) ? $row['attachments'] : '' );
+		$speaker        = $this->normalize_thread_speaker( $row, $ticket );
 
 		return array(
 			'id'           => isset( $row['id'] ) ? absint( $row['id'] ) : 0,
@@ -906,8 +930,342 @@ final class SCAI_SupportCandy_Adapter {
 			'body'         => isset( $row['body'] ) ? wp_kses_post( $row['body'] ) : '',
 			'created_at'   => isset( $row['date_created'] ) ? sanitize_text_field( $row['date_created'] ) : '',
 			'attachments'  => $this->get_attachments_by_ids( $attachment_ids ),
+			'speaker_role'        => $speaker['role'],
+			'speaker_label'       => $speaker['label'],
+			'speaker_name'        => $speaker['name'],
+			'speaker_email'       => $speaker['email'],
+			'speaker_user_id'     => $speaker['user_id'],
+			'speaker_customer_id' => $speaker['customer_id'],
+			'is_customer_message' => 'customer' === $speaker['role'],
+			'is_agent_message'    => 'agent' === $speaker['role'],
+			'is_internal_note'    => 'internal_note' === $speaker['role'],
+			'thread_type'         => isset( $row['type'] ) ? sanitize_key( $row['type'] ) : '',
+			'visibility'          => $speaker['visibility'],
 			'raw'          => $this->sanitize_raw_row( $row ),
 		);
+	}
+
+	/**
+	 * Normalize the speaker represented by a SupportCandy thread row.
+	 *
+	 * @param array<string, mixed> $thread Raw thread row.
+	 * @param array<string, mixed> $ticket Ticket identity data.
+	 * @return array<string, mixed>
+	 */
+	private function normalize_thread_speaker( array $thread, array $ticket = array() ) {
+		$customer_id       = $this->get_first_absint( $thread, array( 'customer', 'customer_id', 'created_by_customer' ) );
+		$user_id           = $this->get_first_absint( $thread, array( 'author_user_id', 'user_id', 'user', 'created_by_user', 'created_by' ) );
+		$ticket_customer_id = isset( $ticket['customer_id'] ) ? absint( $ticket['customer_id'] ) : 0;
+		$name              = isset( $thread['author_name'] ) && is_scalar( $thread['author_name'] ) ? sanitize_text_field( (string) $thread['author_name'] ) : '';
+		$email             = isset( $thread['author_email'] ) && is_scalar( $thread['author_email'] ) ? sanitize_email( (string) $thread['author_email'] ) : '';
+		$agent             = $customer_id > 0 ? $this->get_agent_by_customer_id( $customer_id ) : array();
+		$agent             = empty( $agent ) && $user_id > 0 ? $this->get_agent_by_user_id( $user_id ) : $agent;
+		$role              = 'unknown';
+		$visibility        = 'unknown';
+
+		if ( $this->is_internal_thread( $thread ) ) {
+			$role       = 'internal_note';
+			$visibility = 'internal';
+		} elseif ( $this->is_system_thread( $thread ) ) {
+			$role       = 'system';
+			$visibility = 'system';
+		} elseif ( ! empty( $agent ) ) {
+			$role       = 'agent';
+			$visibility = 'public';
+		} elseif ( $customer_id > 0 && $customer_id === $ticket_customer_id ) {
+			$role       = 'customer';
+			$visibility = 'public';
+		}
+
+		if ( ! empty( $agent ) ) {
+			$user_id = isset( $agent['user_id'] ) ? absint( $agent['user_id'] ) : $user_id;
+			$name    = ! empty( $agent['name'] ) ? sanitize_text_field( $agent['name'] ) : $name;
+		}
+
+		$role = $this->sanitize_speaker_role(
+			apply_filters( 'scai_supportcandy_thread_speaker_role', $role, $thread, $ticket, $agent )
+		);
+
+		$speaker = array(
+			'role'        => $role,
+			'label'       => '',
+			'name'        => $name,
+			'email'       => $email,
+			'user_id'     => $user_id,
+			'customer_id' => $customer_id,
+			'visibility'  => in_array( $visibility, array( 'public', 'internal', 'system', 'unknown' ), true ) ? $visibility : 'unknown',
+		);
+
+		$speaker['label'] = $this->build_speaker_label( $speaker );
+		$speaker          = apply_filters( 'scai_supportcandy_thread_speaker', $speaker, $thread, $ticket, $agent );
+
+		if ( ! is_array( $speaker ) ) {
+			$speaker = array();
+		}
+
+		$normalized = array(
+			'role'        => $this->sanitize_speaker_role( isset( $speaker['role'] ) ? $speaker['role'] : 'unknown' ),
+			'label'       => isset( $speaker['label'] ) && is_scalar( $speaker['label'] ) ? sanitize_text_field( (string) $speaker['label'] ) : '',
+			'name'        => isset( $speaker['name'] ) && is_scalar( $speaker['name'] ) ? sanitize_text_field( (string) $speaker['name'] ) : '',
+			'email'       => isset( $speaker['email'] ) && is_scalar( $speaker['email'] ) ? sanitize_email( (string) $speaker['email'] ) : '',
+			'user_id'     => isset( $speaker['user_id'] ) ? absint( $speaker['user_id'] ) : 0,
+			'customer_id' => isset( $speaker['customer_id'] ) ? absint( $speaker['customer_id'] ) : 0,
+			'visibility'  => isset( $speaker['visibility'] ) && in_array( $speaker['visibility'], array( 'public', 'internal', 'system', 'unknown' ), true ) ? $speaker['visibility'] : 'unknown',
+		);
+
+		if ( '' === $normalized['label'] ) {
+			$normalized['label'] = $this->build_speaker_label( $normalized );
+		}
+
+		$normalized['label'] = sanitize_text_field(
+			apply_filters( 'scai_supportcandy_thread_speaker_label', $normalized['label'], $normalized, $thread, $ticket )
+		);
+
+		return $normalized;
+	}
+
+	/**
+	 * Get a SupportCandy agent by its customer ID.
+	 *
+	 * @param int $customer_id SupportCandy customer ID.
+	 * @return array<string, mixed>
+	 */
+	private function get_agent_by_customer_id( $customer_id ) {
+		$customer_id = absint( $customer_id );
+
+		if ( 0 === $customer_id ) {
+			return array();
+		}
+
+		if ( array_key_exists( $customer_id, $this->agent_customer_cache ) ) {
+			return $this->agent_customer_cache[ $customer_id ];
+		}
+
+		$agents_table = $this->get_table_name( 'agents' );
+
+		if ( '' === $agents_table || ! $this->table_exists( $agents_table ) || ! $this->table_has_column( $agents_table, 'customer' ) ) {
+			$this->agent_customer_cache[ $customer_id ] = array();
+
+			return array();
+		}
+
+		$where = 'WHERE customer = %d';
+
+		if ( $this->table_has_column( $agents_table, 'is_agentgroup' ) ) {
+			$where .= ' AND is_agentgroup = 0';
+		}
+
+		$sql = "SELECT * FROM `{$agents_table}` {$where} ORDER BY id ASC LIMIT 1";
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is schema-controlled and customer ID is prepared.
+		$row = $this->wpdb->get_row( $this->wpdb->prepare( $sql, $customer_id ), ARRAY_A );
+
+		if ( ! is_array( $row ) ) {
+			$this->agent_customer_cache[ $customer_id ] = array();
+
+			return array();
+		}
+
+		$this->agent_customer_cache[ $customer_id ] = array(
+			'id'          => isset( $row['id'] ) ? absint( $row['id'] ) : 0,
+			'user_id'     => isset( $row['user'] ) ? absint( $row['user'] ) : 0,
+			'customer_id' => isset( $row['customer'] ) ? absint( $row['customer'] ) : 0,
+			'name'        => isset( $row['name'] ) ? sanitize_text_field( $row['name'] ) : '',
+		);
+
+		return $this->agent_customer_cache[ $customer_id ];
+	}
+
+	/**
+	 * Get a SupportCandy agent by its WordPress user ID.
+	 *
+	 * @param int $user_id WordPress user ID.
+	 * @return array<string, mixed>
+	 */
+	private function get_agent_by_user_id( $user_id ) {
+		$user_id = absint( $user_id );
+
+		if ( 0 === $user_id ) {
+			return array();
+		}
+
+		if ( array_key_exists( $user_id, $this->agent_user_cache ) ) {
+			return $this->agent_user_cache[ $user_id ];
+		}
+
+		$agents_table = $this->get_table_name( 'agents' );
+
+		if ( '' === $agents_table || ! $this->table_exists( $agents_table ) || ! $this->table_has_column( $agents_table, 'user' ) ) {
+			$this->agent_user_cache[ $user_id ] = array();
+
+			return array();
+		}
+
+		$where = 'WHERE user = %d';
+
+		if ( $this->table_has_column( $agents_table, 'is_agentgroup' ) ) {
+			$where .= ' AND is_agentgroup = 0';
+		}
+
+		$sql = "SELECT * FROM `{$agents_table}` {$where} ORDER BY id ASC LIMIT 1";
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is schema-controlled and user ID is prepared.
+		$row = $this->wpdb->get_row( $this->wpdb->prepare( $sql, $user_id ), ARRAY_A );
+
+		if ( ! is_array( $row ) ) {
+			$this->agent_user_cache[ $user_id ] = array();
+
+			return array();
+		}
+
+		$this->agent_user_cache[ $user_id ] = array(
+			'id'          => isset( $row['id'] ) ? absint( $row['id'] ) : 0,
+			'user_id'     => isset( $row['user'] ) ? absint( $row['user'] ) : 0,
+			'customer_id' => isset( $row['customer'] ) ? absint( $row['customer'] ) : 0,
+			'name'        => isset( $row['name'] ) ? sanitize_text_field( $row['name'] ) : '',
+		);
+
+		return $this->agent_user_cache[ $user_id ];
+	}
+
+	/**
+	 * Get the ticket's SupportCandy customer ID.
+	 *
+	 * @param int $ticket_id Ticket ID.
+	 * @return int
+	 */
+	private function get_ticket_customer_id( $ticket_id ) {
+		$tickets_table = $this->get_table_name( 'tickets' );
+
+		if ( '' === $tickets_table || ! $this->table_exists( $tickets_table ) || ! $this->table_has_column( $tickets_table, 'customer' ) ) {
+			return 0;
+		}
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is schema-controlled and ticket ID is prepared.
+		return absint( $this->wpdb->get_var( $this->wpdb->prepare( "SELECT customer FROM `{$tickets_table}` WHERE id = %d LIMIT 1", absint( $ticket_id ) ) ) );
+	}
+
+	/**
+	 * Determine whether a thread is an internal/private note.
+	 *
+	 * @param array<string, mixed> $thread Thread row.
+	 * @return bool
+	 */
+	private function is_internal_thread( array $thread ) {
+		$type = $this->get_first_key( $thread, array( 'type', 'thread_type', 'source' ) );
+
+		if ( in_array( $type, array( 'note', 'internal_note', 'private_note', 'internal', 'private' ), true ) ) {
+			return true;
+		}
+
+		foreach ( array( 'is_private', 'is_internal', 'is_note' ) as $key ) {
+			if ( isset( $thread[ $key ] ) && $this->is_truthy_value( $thread[ $key ] ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Determine whether a thread is system-generated.
+	 *
+	 * @param array<string, mixed> $thread Thread row.
+	 * @return bool
+	 */
+	private function is_system_thread( array $thread ) {
+		$type = $this->get_first_key( $thread, array( 'type', 'thread_type' ) );
+
+		return in_array( $type, array( 'log', 'system', 'activity', 'change', 'status' ), true );
+	}
+
+	/**
+	 * Build a readable speaker label.
+	 *
+	 * @param array<string, mixed> $speaker Normalized speaker data.
+	 * @return string
+	 */
+	private function build_speaker_label( array $speaker ) {
+		$role = $this->sanitize_speaker_role( isset( $speaker['role'] ) ? $speaker['role'] : 'unknown' );
+		$name = isset( $speaker['name'] ) && is_scalar( $speaker['name'] ) ? sanitize_text_field( (string) $speaker['name'] ) : '';
+
+		if ( 'customer' === $role ) {
+			return '' !== $name ? 'Customer: ' . $name : 'Customer';
+		}
+
+		if ( 'agent' === $role ) {
+			return '' !== $name ? 'Support Agent: ' . $name : 'Support Agent';
+		}
+
+		if ( 'internal_note' === $role ) {
+			return '' !== $name ? 'Internal Note: ' . $name : 'Internal Note';
+		}
+
+		if ( 'system' === $role ) {
+			return 'System';
+		}
+
+		return 'Unknown Sender';
+	}
+
+	/**
+	 * Sanitize a supported speaker role.
+	 *
+	 * @param mixed $role Speaker role.
+	 * @return string
+	 */
+	private function sanitize_speaker_role( $role ) {
+		$role = sanitize_key( (string) $role );
+
+		return in_array( $role, array( 'customer', 'agent', 'internal_note', 'system', 'unknown' ), true ) ? $role : 'unknown';
+	}
+
+	/**
+	 * Get the first positive integer from possible row keys.
+	 *
+	 * @param array<string, mixed> $data Data row.
+	 * @param array<int, string>   $keys Possible keys.
+	 * @return int
+	 */
+	private function get_first_absint( array $data, array $keys ) {
+		foreach ( $keys as $key ) {
+			if ( isset( $data[ $key ] ) && 0 < absint( $data[ $key ] ) ) {
+				return absint( $data[ $key ] );
+			}
+		}
+
+		return 0;
+	}
+
+	/**
+	 * Get the first sanitized key value from possible row keys.
+	 *
+	 * @param array<string, mixed> $data Data row.
+	 * @param array<int, string>   $keys Possible keys.
+	 * @return string
+	 */
+	private function get_first_key( array $data, array $keys ) {
+		foreach ( $keys as $key ) {
+			if ( isset( $data[ $key ] ) && is_scalar( $data[ $key ] ) ) {
+				$value = sanitize_key( (string) $data[ $key ] );
+
+				if ( '' !== $value ) {
+					return $value;
+				}
+			}
+		}
+
+		return '';
+	}
+
+	/**
+	 * Check a database flag value.
+	 *
+	 * @param mixed $value Flag value.
+	 * @return bool
+	 */
+	private function is_truthy_value( $value ) {
+		return in_array( strtolower( sanitize_text_field( (string) $value ) ), array( '1', 'true', 'yes', 'on' ), true );
 	}
 
 	/**

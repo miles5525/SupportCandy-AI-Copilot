@@ -71,7 +71,7 @@ final class SCAI_Context_Engine {
 		$all_attachments = $this->sanitize_attachments( $enriched['attachments'] );
 		$reported_attachment_count = isset( $ticket_context['stats']['attachment_count'] ) ? absint( $ticket_context['stats']['attachment_count'] ) : 0;
 		$attachment_count          = max( count( $all_attachments ), $reported_attachment_count );
-		$attachments               = array_slice( $all_attachments, 0, self::MAX_CONTEXT_ATTACHMENTS );
+		$attachments               = array_slice( $all_attachments, 0, $args['max_attachments'] );
 		$reported_text_omitted     = isset( $ticket_context['stats']['text_attachment_omitted_count'] ) ? absint( $ticket_context['stats']['text_attachment_omitted_count'] ) : 0;
 		$text_attachment_omitted   = max( absint( $enriched['omitted_count'] ), $reported_text_omitted );
 
@@ -122,7 +122,7 @@ final class SCAI_Context_Engine {
 			return '';
 		}
 
-		$text = $this->build_summary_text( $context );
+		$text = $this->build_summary_text( $context, $args );
 		$text = $this->truncate_text( $text, $args['max_total_context_length'] );
 
 		/**
@@ -207,12 +207,24 @@ final class SCAI_Context_Engine {
 			}
 
 			$attachments = isset( $thread['attachments'] ) && is_array( $thread['attachments'] ) ? $thread['attachments'] : array();
+			$speaker_role = $this->get_thread_speaker_role( $thread );
 
 			$sanitized[] = array(
 				'id'               => isset( $thread['id'] ) ? absint( $thread['id'] ) : 0,
 				'type'             => isset( $thread['type'] ) ? $this->normalize_thread_type( $thread['type'] ) : 'thread',
+				'thread_type'      => isset( $thread['thread_type'] ) ? sanitize_key( $thread['thread_type'] ) : ( isset( $thread['type'] ) ? sanitize_key( $thread['type'] ) : '' ),
 				'author_name'      => isset( $thread['author_name'] ) ? $this->normalize_text( $thread['author_name'] ) : '',
 				'author_email'     => isset( $thread['author_email'] ) ? sanitize_email( $thread['author_email'] ) : '',
+				'speaker_role'     => $speaker_role,
+				'speaker_label'    => $this->get_thread_speaker_label( $thread, $speaker_role ),
+				'speaker_name'     => isset( $thread['speaker_name'] ) ? $this->normalize_text( $thread['speaker_name'] ) : '',
+				'speaker_email'    => isset( $thread['speaker_email'] ) ? sanitize_email( $thread['speaker_email'] ) : '',
+				'speaker_user_id'  => isset( $thread['speaker_user_id'] ) ? absint( $thread['speaker_user_id'] ) : 0,
+				'speaker_customer_id' => isset( $thread['speaker_customer_id'] ) ? absint( $thread['speaker_customer_id'] ) : 0,
+				'is_customer_message' => 'customer' === $speaker_role,
+				'is_agent_message'    => 'agent' === $speaker_role,
+				'is_internal_note'    => 'internal_note' === $speaker_role,
+				'visibility'       => isset( $thread['visibility'] ) ? $this->sanitize_thread_visibility( $thread['visibility'] ) : ( 'internal_note' === $speaker_role ? 'internal' : ( 'system' === $speaker_role ? 'system' : 'unknown' ) ),
 				'body'             => isset( $thread['body'] ) ? $this->truncate_text( $this->normalize_text( $thread['body'] ), $max_thread_body_length ) : '',
 				'created_at'       => isset( $thread['created_at'] ) ? sanitize_text_field( $thread['created_at'] ) : '',
 				'attachment_count' => count( $attachments ),
@@ -532,12 +544,129 @@ final class SCAI_Context_Engine {
 	}
 
 	/**
+	 * Get a safe speaker role from normalized or legacy thread data.
+	 *
+	 * @param array<string, mixed> $thread Thread data.
+	 * @return string
+	 */
+	private function get_thread_speaker_role( array $thread ) {
+		$role    = isset( $thread['speaker_role'] ) ? sanitize_key( $thread['speaker_role'] ) : '';
+		$allowed = array( 'customer', 'agent', 'internal_note', 'system', 'unknown' );
+
+		if ( in_array( $role, $allowed, true ) ) {
+			return $role;
+		}
+
+		if ( ! empty( $thread['is_internal_note'] ) ) {
+			return 'internal_note';
+		}
+
+		if ( ! empty( $thread['is_customer_message'] ) ) {
+			return 'customer';
+		}
+
+		if ( ! empty( $thread['is_agent_message'] ) ) {
+			return 'agent';
+		}
+
+		$thread_type = isset( $thread['thread_type'] ) ? sanitize_key( $thread['thread_type'] ) : ( isset( $thread['type'] ) ? sanitize_key( $thread['type'] ) : '' );
+
+		if ( in_array( $thread_type, array( 'note', 'internal_note', 'private_note', 'internal', 'private' ), true ) ) {
+			return 'internal_note';
+		}
+
+		if ( in_array( $thread_type, array( 'log', 'system', 'activity', 'change', 'status' ), true ) ) {
+			return 'system';
+		}
+
+		return 'unknown';
+	}
+
+	/**
+	 * Get a readable, sanitized thread speaker label.
+	 *
+	 * @param array<string, mixed> $thread       Thread data.
+	 * @param string               $speaker_role Normalized speaker role.
+	 * @return string
+	 */
+	private function get_thread_speaker_label( array $thread, $speaker_role = '' ) {
+		$label = isset( $thread['speaker_label'] ) ? $this->normalize_text( $thread['speaker_label'] ) : '';
+
+		if ( '' !== $label ) {
+			return $label;
+		}
+
+		return $this->get_thread_role_label( '' !== $speaker_role ? $speaker_role : $this->get_thread_speaker_role( $thread ) );
+	}
+
+	/**
+	 * Get the fallback label for a speaker role.
+	 *
+	 * @param string $speaker_role Speaker role.
+	 * @return string
+	 */
+	private function get_thread_role_label( $speaker_role ) {
+		$labels = array(
+			'customer'      => 'Customer',
+			'agent'         => 'Support Agent',
+			'internal_note' => 'Internal Note',
+			'system'        => 'System',
+			'unknown'       => 'Unknown Sender',
+		);
+		$speaker_role = sanitize_key( $speaker_role );
+
+		return isset( $labels[ $speaker_role ] ) ? $labels[ $speaker_role ] : $labels['unknown'];
+	}
+
+	/**
+	 * Sanitize thread visibility.
+	 *
+	 * @param mixed $visibility Visibility value.
+	 * @return string
+	 */
+	private function sanitize_thread_visibility( $visibility ) {
+		$visibility = sanitize_key( $visibility );
+
+		return in_array( $visibility, array( 'public', 'internal', 'system', 'unknown' ), true ) ? $visibility : 'unknown';
+	}
+
+	/**
+	 * Build a numbered conversation heading.
+	 *
+	 * @param array<string, mixed> $thread Thread data.
+	 * @param int                  $index  Zero-based thread index.
+	 * @return string
+	 */
+	private function build_thread_heading( array $thread, $index ) {
+		$label      = $this->get_thread_speaker_label( $thread );
+		$created_at = isset( $thread['created_at'] ) ? sanitize_text_field( $thread['created_at'] ) : '';
+		$heading    = ( absint( $index ) + 1 ) . '. [' . $label . ']';
+
+		if ( '' !== $created_at ) {
+			$heading .= ' — ' . $created_at;
+		}
+
+		return $heading;
+	}
+
+	/**
+	 * Determine whether a normalized thread is an internal note.
+	 *
+	 * @param array<string, mixed> $thread Thread data.
+	 * @return bool
+	 */
+	private function is_internal_note_thread( array $thread ) {
+		return 'internal_note' === $this->get_thread_speaker_role( $thread ) || ! empty( $thread['is_internal_note'] );
+	}
+
+	/**
 	 * Build readable summary text from compact context.
 	 *
 	 * @param array<string, mixed> $context Compact context.
+	 * @param array<string, mixed> $args    Context arguments.
 	 * @return string
 	 */
-	private function build_summary_text( array $context ) {
+	private function build_summary_text( array $context, array $args ) {
 		$ticket      = isset( $context['ticket'] ) && is_array( $context['ticket'] ) ? $context['ticket'] : array();
 		$threads     = isset( $context['threads'] ) && is_array( $context['threads'] ) ? $context['threads'] : array();
 		$attachments = isset( $context['attachments'] ) && is_array( $context['attachments'] ) ? $context['attachments'] : array();
@@ -553,27 +682,33 @@ final class SCAI_Context_Engine {
 		$lines[] = 'Customer Email: ' . ( isset( $ticket['customer_email'] ) ? sanitize_email( $ticket['customer_email'] ) : '' );
 		$lines[] = 'Created: ' . ( isset( $ticket['created_at'] ) ? sanitize_text_field( $ticket['created_at'] ) : '' );
 		$lines[] = 'Updated: ' . ( isset( $ticket['updated_at'] ) ? sanitize_text_field( $ticket['updated_at'] ) : '' );
+
+		if ( ! empty( $args['include_attachment_section'] ) ) {
+			$omitted_count      = isset( $context['stats']['attachment_omitted_count'] ) ? absint( $context['stats']['attachment_omitted_count'] ) : 0;
+			$text_omitted_count = isset( $context['stats']['text_attachment_omitted_count'] ) ? absint( $context['stats']['text_attachment_omitted_count'] ) : 0;
+			$lines[]            = '';
+			$lines[]            = $this->build_attachments_context_text( $attachments, $omitted_count, $text_omitted_count, $args['max_attachments'] );
+		}
+
 		$lines[] = '';
 		$lines[] = 'Conversation:';
 
-		foreach ( $threads as $thread ) {
+		foreach ( $threads as $index => $thread ) {
 			if ( ! is_array( $thread ) ) {
 				continue;
 			}
 
-			$type       = isset( $thread['type'] ) ? ucfirst( $this->normalize_text( $thread['type'] ) ) : 'Thread';
-			$created_at = isset( $thread['created_at'] ) ? sanitize_text_field( $thread['created_at'] ) : '';
-			$body       = isset( $thread['body'] ) ? $this->normalize_text( $thread['body'] ) : '';
+			$body = isset( $thread['body'] ) ? $this->normalize_text( $thread['body'] ) : '';
 
 			$lines[] = '';
-			$lines[] = '[' . $type . ' | ' . $created_at . ']';
+			$lines[] = $this->build_thread_heading( $thread, $index );
+
+			if ( $this->is_internal_note_thread( $thread ) ) {
+				$lines[] = 'Internal support context. Do not quote this note directly to the customer.';
+			}
+
 			$lines[] = $body;
 		}
-
-		$omitted_count      = isset( $context['stats']['attachment_omitted_count'] ) ? absint( $context['stats']['attachment_omitted_count'] ) : 0;
-		$text_omitted_count = isset( $context['stats']['text_attachment_omitted_count'] ) ? absint( $context['stats']['text_attachment_omitted_count'] ) : 0;
-		$lines[]            = '';
-		$lines[]            = $this->build_attachments_context_text( $attachments, $omitted_count, $text_omitted_count );
 
 		return implode( "\n", $lines );
 	}
@@ -584,10 +719,11 @@ final class SCAI_Context_Engine {
 	 * @param array<int, array<string, mixed>> $attachments       Normalized attachments.
 	 * @param int                              $omitted_count      Number omitted from context.
 	 * @param int                              $text_omitted_count Readable text attachments omitted.
+	 * @param int                              $max_attachments    Maximum attachments to render.
 	 * @return string
 	 */
-	private function build_attachments_context_text( array $attachments, $omitted_count = 0, $text_omitted_count = 0 ) {
-		$lines = array( 'Attachments:' );
+	private function build_attachments_context_text( array $attachments, $omitted_count = 0, $text_omitted_count = 0, $max_attachments = self::MAX_CONTEXT_ATTACHMENTS ) {
+		$lines = array( 'Ticket Attachments:' );
 
 		if ( empty( $attachments ) ) {
 			$lines[] = 'None';
@@ -595,7 +731,9 @@ final class SCAI_Context_Engine {
 			return implode( "\n", $lines );
 		}
 
-		foreach ( array_slice( $attachments, 0, self::MAX_CONTEXT_ATTACHMENTS ) as $index => $attachment ) {
+		$max_attachments = max( 1, min( self::MAX_CONTEXT_ATTACHMENTS, absint( $max_attachments ) ) );
+
+		foreach ( array_slice( $attachments, 0, $max_attachments ) as $index => $attachment ) {
 			if ( ! is_array( $attachment ) ) {
 				continue;
 			}
@@ -605,11 +743,21 @@ final class SCAI_Context_Engine {
 			$mime_type = isset( $attachment['mime_type'] ) ? sanitize_mime_type( $attachment['mime_type'] ) : '';
 			$type      = isset( $attachment['type'] ) ? sanitize_key( $attachment['type'] ) : 'other';
 			$url       = isset( $attachment['url'] ) ? esc_url_raw( $attachment['url'], array( 'http', 'https' ) ) : '';
+			$file_size = isset( $attachment['size'] ) ? absint( $attachment['size'] ) : 0;
+			$thread_id = isset( $attachment['thread_id'] ) ? absint( $attachment['thread_id'] ) : 0;
 			$label     = '' !== $filename ? $filename : ( '' !== $title ? $title : 'Unnamed attachment' );
 
 			$lines[] = ( absint( $index ) + 1 ) . '. ' . $label;
 			$lines[] = '   - Type: ' . $type;
 			$lines[] = '   - MIME: ' . ( '' !== $mime_type ? $mime_type : 'unknown' );
+
+			if ( 0 < $file_size ) {
+				$lines[] = '   - File size: ' . $file_size . ' bytes';
+			}
+
+			if ( 0 < $thread_id ) {
+				$lines[] = '   - Attached to thread ID: ' . $thread_id;
+			}
 
 			if ( '' !== $url && wp_http_validate_url( $url ) ) {
 				$lines[] = '   - URL: ' . $url;
@@ -622,7 +770,7 @@ final class SCAI_Context_Engine {
 				$lines[] = '   - Truncated: ' . ( ! empty( $attachment['content_truncated'] ) ? 'yes' : 'no' );
 			} else {
 				$lines[] = '   - Content inspected: no';
-				$lines[] = '   - Note: Attachment content has not been inspected by AI yet.';
+				$lines[] = '   - Note: ' . $this->get_uninspected_attachment_note( $type );
 			}
 
 			$lines[] = '';
@@ -661,6 +809,26 @@ final class SCAI_Context_Engine {
 	}
 
 	/**
+	 * Get an honest note for an attachment whose content was not inspected.
+	 *
+	 * @param string $type Attachment type.
+	 * @return string
+	 */
+	private function get_uninspected_attachment_note( $type ) {
+		$type = sanitize_key( $type );
+
+		if ( 'image' === $type ) {
+			return 'Image content has not been inspected by AI yet.';
+		}
+
+		if ( in_array( $type, array( 'pdf', 'document' ), true ) ) {
+			return 'Document content has not been inspected by AI yet.';
+		}
+
+		return 'Attachment content has not been inspected by AI yet.';
+	}
+
+	/**
 	 * Normalize context args.
 	 *
 	 * @param array<string, mixed> $args Context args.
@@ -676,6 +844,8 @@ final class SCAI_Context_Engine {
 				'read_text_attachments'    => true,
 				'max_text_attachments'     => 3,
 				'max_attachment_excerpt_chars' => 0,
+				'max_attachments'          => self::MAX_CONTEXT_ATTACHMENTS,
+				'include_attachment_section' => true,
 			)
 		);
 
@@ -686,6 +856,8 @@ final class SCAI_Context_Engine {
 			'read_text_attachments'    => (bool) $args['read_text_attachments'],
 			'max_text_attachments'     => max( 1, min( 3, absint( $args['max_text_attachments'] ) ) ),
 			'max_attachment_excerpt_chars' => absint( $args['max_attachment_excerpt_chars'] ),
+			'max_attachments'          => max( 1, min( self::MAX_CONTEXT_ATTACHMENTS, absint( $args['max_attachments'] ) ) ),
+			'include_attachment_section' => (bool) $args['include_attachment_section'],
 		);
 	}
 
@@ -802,7 +974,7 @@ final class SCAI_Context_Engine {
 	 */
 	private function sanitize_context_output( array $context, array $args ) {
 		$attachments      = isset( $context['attachments'] ) && is_array( $context['attachments'] ) ? $this->sanitize_attachments( $context['attachments'] ) : array();
-		$attachments      = array_slice( $attachments, 0, self::MAX_CONTEXT_ATTACHMENTS );
+		$attachments      = array_slice( $attachments, 0, $args['max_attachments'] );
 		$reported_count   = isset( $context['stats']['attachment_count'] ) ? absint( $context['stats']['attachment_count'] ) : count( $attachments );
 		$attachment_count = max( count( $attachments ), $reported_count );
 		$text_omitted_count = isset( $context['stats']['text_attachment_omitted_count'] ) ? absint( $context['stats']['text_attachment_omitted_count'] ) : 0;

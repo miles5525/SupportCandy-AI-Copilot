@@ -43,6 +43,13 @@ final class SCAI_Ticket_AI_Service {
 	private $conversation_repository = null;
 
 	/**
+	 * Image attachment preparer instance.
+	 *
+	 * @var SCAI_Image_Attachment_Preparer|null
+	 */
+	private $image_attachment_preparer = null;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param SCAI_Context_Engine|null $context_engine Optional context engine.
@@ -68,6 +75,14 @@ final class SCAI_Ticket_AI_Service {
 			} catch ( Throwable $exception ) {
 				$this->conversation_repository = null;
 				$this->maybe_log_conversation_error( 0, '' );
+			}
+		}
+
+		if ( class_exists( 'SCAI_Image_Attachment_Preparer' ) ) {
+			try {
+				$this->image_attachment_preparer = new SCAI_Image_Attachment_Preparer();
+			} catch ( Throwable $exception ) {
+				$this->image_attachment_preparer = null;
 			}
 		}
 	}
@@ -314,6 +329,220 @@ final class SCAI_Ticket_AI_Service {
 	}
 
 	/**
+	 * Determine whether image understanding is explicitly enabled.
+	 *
+	 * @return bool
+	 */
+	private function is_image_understanding_enabled() {
+		if ( ! class_exists( 'SCAI_Settings' ) || ! is_callable( array( 'SCAI_Settings', 'get' ) ) ) {
+			return false;
+		}
+
+		$option_name = defined( 'SCAI_Settings::OPTION_IMAGE_UNDERSTANDING_ENABLED' )
+			? SCAI_Settings::OPTION_IMAGE_UNDERSTANDING_ENABLED
+			: 'scai_image_understanding_enabled';
+
+		if ( null === get_option( $option_name, null ) ) {
+			return false;
+		}
+
+		return (bool) SCAI_Settings::get( 'image_understanding_enabled', false );
+	}
+
+	/**
+	 * Prepare safe ticket images for an AI request.
+	 *
+	 * Base64 image data is returned only in the request image list. Metadata is
+	 * deliberately limited to counts, filenames, and the enabled flag.
+	 *
+	 * @param array<string, mixed> $package Ticket context package.
+	 * @param array<string, mixed> $args    Preparation arguments.
+	 * @return array{images: array<int, array<string, mixed>>, metadata: array<string, mixed>}
+	 */
+	private function prepare_ticket_images_for_ai( array $package, array $args = array() ) {
+		$enabled     = $this->is_image_understanding_enabled();
+		$context     = isset( $package['context'] ) && is_array( $package['context'] ) ? $package['context'] : array();
+		$attachments = isset( $context['attachments'] ) && is_array( $context['attachments'] ) ? $context['attachments'] : array();
+		$metadata    = array_merge(
+			$this->get_safe_attachment_metadata_for_request( $attachments ),
+			array(
+				'prepared_image_count'             => 0,
+				'prepared_image_filenames'         => array(),
+				'image_understanding_enabled'      => $enabled,
+				'image_content_provided_to_model' => false,
+			)
+		);
+
+		if ( ! $enabled || ! $this->image_attachment_preparer instanceof SCAI_Image_Attachment_Preparer ) {
+			return array(
+				'images'   => array(),
+				'metadata' => $metadata,
+			);
+		}
+
+		$ticket_id = isset( $context['ticket']['id'] ) ? absint( $context['ticket']['id'] ) : 0;
+
+		if ( 0 === $ticket_id || ! class_exists( 'SCAI_SupportCandy_Adapter' ) ) {
+			return array(
+				'images'   => array(),
+				'metadata' => $metadata,
+			);
+		}
+
+		try {
+			$adapter = new SCAI_SupportCandy_Adapter();
+
+			if ( ! method_exists( $adapter, 'get_ticket_attachments' ) ) {
+				return array(
+					'images'   => array(),
+					'metadata' => $metadata,
+				);
+			}
+
+			$attachments = $adapter->get_ticket_attachments( $ticket_id );
+			$attachments = is_array( $attachments ) ? $attachments : array();
+
+			$prepared = $this->image_attachment_preparer->prepare_multiple(
+				$attachments,
+				array(
+					'max_images' => isset( $args['max_images'] ) ? absint( $args['max_images'] ) : SCAI_Image_Attachment_Preparer::DEFAULT_MAX_IMAGES,
+					'detail'     => isset( $args['detail'] ) ? sanitize_key( $args['detail'] ) : 'low',
+				)
+			);
+		} catch ( Throwable $exception ) {
+			$this->maybe_log_image_preparation_error( $ticket_id );
+
+			return array(
+				'images'   => array(),
+				'metadata' => $metadata,
+			);
+		}
+
+		$images = array();
+
+		foreach ( $prepared as $image ) {
+			if ( ! is_array( $image ) || empty( $image['success'] ) || empty( $image['image_data_url'] ) ) {
+				continue;
+			}
+
+			$filename  = isset( $image['filename'] ) && is_scalar( $image['filename'] ) ? sanitize_file_name( (string) $image['filename'] ) : '';
+			$mime_type = isset( $image['mime_type'] ) && is_scalar( $image['mime_type'] ) ? sanitize_mime_type( (string) $image['mime_type'] ) : '';
+
+			$images[] = array(
+				'id'        => 0,
+				'url'       => (string) $image['image_data_url'],
+				'mime_type' => $mime_type,
+				'filename'  => $filename,
+				'detail'    => isset( $image['detail'] ) ? sanitize_key( $image['detail'] ) : 'low',
+			);
+
+			if ( '' !== $filename ) {
+				$metadata['prepared_image_filenames'][] = $filename;
+			}
+		}
+
+		$metadata['prepared_image_filenames']         = array_values( array_unique( $metadata['prepared_image_filenames'] ) );
+		$metadata['prepared_image_count']             = count( $images );
+		$metadata['image_content_provided_to_model'] = 0 < $metadata['prepared_image_count'];
+
+		return array(
+			'images'   => $images,
+			'metadata' => $metadata,
+		);
+	}
+
+	/**
+	 * Build non-sensitive attachment metadata for requests and persistence.
+	 *
+	 * @param array<int, mixed> $attachments Normalized context attachments.
+	 * @return array<string, int>
+	 */
+	private function get_safe_attachment_metadata_for_request( array $attachments ) {
+		$metadata = array(
+			'attachment_count'              => count( $attachments ),
+			'text_attachment_excerpt_count' => 0,
+			'image_attachment_count'        => 0,
+		);
+
+		foreach ( $attachments as $attachment ) {
+			if ( ! is_array( $attachment ) ) {
+				continue;
+			}
+
+			if ( ! empty( $attachment['content_inspected'] ) && ! empty( $attachment['content_excerpt'] ) ) {
+				$metadata['text_attachment_excerpt_count']++;
+			}
+
+			if ( $this->is_image_attachment_metadata( $attachment ) ) {
+				$metadata['image_attachment_count']++;
+			}
+		}
+
+		return $metadata;
+	}
+
+	/**
+	 * Add a safe attachment handoff note to the prompt.
+	 *
+	 * @param array<string, mixed> $request_args Request arguments.
+	 * @param array<string, mixed> $metadata     Safe attachment metadata.
+	 * @return array<string, mixed>
+	 */
+	private function add_attachment_handoff_note( array $request_args, array $metadata ) {
+		$attachment_count = isset( $metadata['attachment_count'] ) ? absint( $metadata['attachment_count'] ) : 0;
+
+		if ( 0 === $attachment_count ) {
+			return $request_args;
+		}
+
+		$note = sprintf(
+			/* translators: 1: attachment count, 2: inspected text excerpt count, 3: images supplied to the model. */
+			__( 'Attachment handoff: %1$d attachment(s) are represented in the ticket context; %2$d inspected text excerpt(s) are available; %3$d image(s) are supplied to the model.', 'supportcandy-ai' ),
+			$attachment_count,
+			isset( $metadata['text_attachment_excerpt_count'] ) ? absint( $metadata['text_attachment_excerpt_count'] ) : 0,
+			! empty( $metadata['image_content_provided_to_model'] ) && isset( $metadata['prepared_image_count'] ) ? absint( $metadata['prepared_image_count'] ) : 0
+		);
+
+		$note .= ' ' . __( 'Use inspected excerpts as evidence. Mention metadata-only attachments honestly, and do not claim unprovided image content was inspected.', 'supportcandy-ai' );
+
+		$prompt = isset( $request_args['prompt'] ) && is_scalar( $request_args['prompt'] ) ? sanitize_textarea_field( (string) $request_args['prompt'] ) : '';
+		$request_args['prompt'] = trim( $prompt . "\n\n" . $note );
+
+		return $request_args;
+	}
+
+	/**
+	 * Check whether attachment metadata describes a supported image type.
+	 *
+	 * @param array<string, mixed> $attachment Attachment metadata.
+	 * @return bool
+	 */
+	private function is_image_attachment_metadata( array $attachment ) {
+		$filename  = isset( $attachment['filename'] ) && is_scalar( $attachment['filename'] ) ? sanitize_file_name( (string) $attachment['filename'] ) : '';
+		$mime_type = isset( $attachment['mime_type'] ) && is_scalar( $attachment['mime_type'] ) ? sanitize_mime_type( (string) $attachment['mime_type'] ) : '';
+		$extension = strtolower( (string) pathinfo( $filename, PATHINFO_EXTENSION ) );
+
+		return 0 === strpos( $mime_type, 'image/' )
+			|| in_array( $extension, array( 'jpg', 'jpeg', 'png', 'webp', 'gif' ), true );
+	}
+
+	/**
+	 * Log a safe image preparation failure in debug mode.
+	 *
+	 * @param int $ticket_id Ticket ID.
+	 * @return void
+	 */
+	private function maybe_log_image_preparation_error( $ticket_id ) {
+		if ( ! defined( 'WP_DEBUG' ) || ! WP_DEBUG ) {
+			return;
+		}
+
+		error_log( // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Debug-only, path-free failure notice.
+			sprintf( 'SupportCandy AI image preparation failed for ticket %d.', absint( $ticket_id ) )
+		);
+	}
+
+	/**
 	 * Send request through the AI engine.
 	 *
 	 * @param array<string, mixed> $request_args Request args.
@@ -333,12 +562,23 @@ final class SCAI_Ticket_AI_Service {
 			return $this->build_error_response( 'ai_engine_unavailable', __( 'AI request class is unavailable.', 'supportcandy-ai' ), $this->build_metadata( $ticket_id, $feature, $package ) );
 		}
 
+		$image_preparation = $this->prepare_ticket_images_for_ai( $package );
+
+		if ( ! empty( $image_preparation['images'] ) ) {
+			$request_args['images'] = $image_preparation['images'];
+		}
+
+		$normalized_request = SCAI_AI_Request::from_array( $request_args );
+		$image_preparation['metadata']['image_content_provided_to_model'] = $normalized_request->has_images();
+		$package['image_metadata'] = $image_preparation['metadata'];
+
+		$request_args = $this->add_attachment_handoff_note( $request_args, $image_preparation['metadata'] );
+
 		$request_args['metadata'] = isset( $request_args['metadata'] ) && is_array( $request_args['metadata'] )
 			? array_merge( $request_args['metadata'], $this->build_metadata( $ticket_id, $feature, $package ) )
 			: $this->build_metadata( $ticket_id, $feature, $package );
 
-		$request = SCAI_AI_Request::from_array( $request_args );
-
+		$request  = SCAI_AI_Request::from_array( $request_args );
 		$response = $ai_engine->generate_response( $request );
 
 		if ( $response instanceof SCAI_AI_Response ) {
@@ -384,7 +624,8 @@ final class SCAI_Ticket_AI_Service {
 		$response_options = isset( $context['response_options'] ) && is_array( $context['response_options'] )
 			? $this->normalize_response_options( $context['response_options'] )
 			: $this->normalize_response_options( array() );
-		$conversation_args  = array(
+		$image_metadata   = isset( $context['image_metadata'] ) && is_array( $context['image_metadata'] ) ? $this->sanitize_metadata( $context['image_metadata'] ) : array();
+		$conversation_args = array(
 			'provider'          => $response->get_provider(),
 			'model'             => $response->get_model(),
 			'tokens'            => $response->get_total_tokens(),
@@ -397,9 +638,13 @@ final class SCAI_Ticket_AI_Service {
 				'finish_reason'    => $response->get_finish_reason(),
 				'thread_count'     => isset( $stats['thread_count'] ) ? absint( $stats['thread_count'] ) : 0,
 				'attachment_count' => isset( $stats['attachment_count'] ) ? absint( $stats['attachment_count'] ) : 0,
-				'tone'             => $response_options['tone'],
-				'length'           => $response_options['length'],
-				'format'           => $response_options['format'],
+				'text_attachment_excerpt_count' => isset( $image_metadata['text_attachment_excerpt_count'] ) ? absint( $image_metadata['text_attachment_excerpt_count'] ) : 0,
+				'image_attachment_count'        => isset( $image_metadata['image_attachment_count'] ) ? absint( $image_metadata['image_attachment_count'] ) : 0,
+				'tone'                     => $response_options['tone'],
+				'length'                   => $response_options['length'],
+				'format'                   => $response_options['format'],
+				'prepared_image_count'     => isset( $image_metadata['prepared_image_count'] ) ? absint( $image_metadata['prepared_image_count'] ) : 0,
+				'prepared_image_filenames' => isset( $image_metadata['prepared_image_filenames'] ) && is_array( $image_metadata['prepared_image_filenames'] ) ? $image_metadata['prepared_image_filenames'] : array(),
 			),
 		);
 
@@ -514,16 +759,20 @@ final class SCAI_Ticket_AI_Service {
 	 * @return array<string, mixed>
 	 */
 	private function build_metadata( $ticket_id, $feature, array $package = array() ) {
-		$context     = isset( $package['context'] ) && is_array( $package['context'] ) ? $package['context'] : array();
-		$stats       = isset( $context['stats'] ) && is_array( $context['stats'] ) ? $context['stats'] : array();
-		$thread_count = isset( $stats['thread_count'] ) ? absint( $stats['thread_count'] ) : 0;
+		$context          = isset( $package['context'] ) && is_array( $package['context'] ) ? $package['context'] : array();
+		$stats            = isset( $context['stats'] ) && is_array( $context['stats'] ) ? $context['stats'] : array();
+		$image_metadata   = isset( $package['image_metadata'] ) && is_array( $package['image_metadata'] ) ? $this->sanitize_metadata( $package['image_metadata'] ) : array();
+		$thread_count     = isset( $stats['thread_count'] ) ? absint( $stats['thread_count'] ) : 0;
 		$attachment_count = isset( $stats['attachment_count'] ) ? absint( $stats['attachment_count'] ) : 0;
 
-		return array(
-			'ticket_id'                => absint( $ticket_id ),
-			'feature'                  => sanitize_key( $feature ),
-			'context_thread_count'     => $thread_count,
-			'context_attachment_count' => $attachment_count,
+		return array_merge(
+			array(
+				'ticket_id'                => absint( $ticket_id ),
+				'feature'                  => sanitize_key( $feature ),
+				'context_thread_count'     => $thread_count,
+				'context_attachment_count' => $attachment_count,
+			),
+			$image_metadata
 		);
 	}
 

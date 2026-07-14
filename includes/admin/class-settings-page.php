@@ -77,11 +77,13 @@ final class SCAI_Settings_Page {
 			$this->redirect_with_message( 'settings_unavailable' );
 		}
 
-		$retention_days       = isset( $_POST['scai_conversation_retention_days'] )
-			? absint( wp_unslash( $_POST['scai_conversation_retention_days'] ) )
+		$posted = wp_unslash( $_POST );
+
+		$retention_days       = isset( $posted['scai_conversation_retention_days'] ) && is_scalar( $posted['scai_conversation_retention_days'] )
+			? absint( $posted['scai_conversation_retention_days'] )
 			: 30;
-		$company_instructions = isset( $_POST['scai_company_instructions'] )
-			? sanitize_textarea_field( wp_unslash( $_POST['scai_company_instructions'] ) )
+		$company_instructions = isset( $posted['scai_company_instructions'] ) && is_scalar( $posted['scai_company_instructions'] )
+			? sanitize_textarea_field( $posted['scai_company_instructions'] )
 			: '';
 
 		SCAI_Settings::update(

@@ -49,6 +49,7 @@ if ( ! class_exists( 'SCAI_Loader' ) ) {
 				SCAI_PLUGIN_PATH . 'includes/services/class-provider-config.php',
 				SCAI_PLUGIN_PATH . 'includes/services/class-http-client.php',
 				SCAI_PLUGIN_PATH . 'includes/services/class-attachment-reader.php',
+				SCAI_PLUGIN_PATH . 'includes/services/class-image-attachment-preparer.php',
 
 				// Admin.
 				SCAI_PLUGIN_PATH . 'includes/admin/class-admin.php',
