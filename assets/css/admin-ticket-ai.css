@@ -754,3 +754,147 @@
 	background: #fff;
 	color: var(--scai-primary-dark);
 }
+
+/* Keep plugin-owned popup controls consistent across wp-admin and frontend. */
+#scai-ticket-ai-panel.scai-ai-popup {
+	--scai-control-height: 40px;
+	--scai-control-small-height: 36px;
+	--scai-control-radius: 6px;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup button,
+#scai-ticket-ai-panel.scai-ai-popup select,
+#scai-ticket-ai-panel.scai-ai-popup input[type="text"],
+#scai-ticket-ai-panel.scai-ai-popup input[type="number"] {
+	min-height: var(--scai-control-height);
+	border-radius: var(--scai-control-radius);
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-response-tone,
+#scai-ticket-ai-panel.scai-ai-popup .scai-response-length,
+#scai-ticket-ai-panel.scai-ai-popup .scai-response-format,
+#scai-ticket-ai-panel.scai-ai-popup .scai-insert-mode {
+	height: var(--scai-control-height);
+	min-height: var(--scai-control-height);
+	padding: 0 32px 0 10px;
+	border: 1px solid var(--scai-border);
+	border-radius: var(--scai-control-radius);
+	background-color: var(--scai-surface);
+	color: var(--scai-text);
+	font-size: 13px;
+	line-height: normal;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-result-actions {
+	display: flex;
+	align-items: flex-end;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-insert-mode-control {
+	display: inline-flex;
+	align-items: flex-start;
+	min-width: 210px;
+	flex-direction: column;
+	gap: 4px;
+	color: var(--scai-text);
+	font-size: 12px;
+	font-weight: 600;
+	line-height: 1.3;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-insert-mode {
+	width: 100%;
+	min-width: 210px;
+	max-width: 100%;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-conversation-history-actions button,
+#scai-ticket-ai-panel.scai-ai-popup .scai-toggle-more-history {
+	min-height: var(--scai-control-small-height);
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-ai-popup-close {
+	width: 32px;
+	min-width: 32px;
+	height: 32px;
+	min-height: 32px;
+	border-radius: var(--scai-control-radius);
+}
+
+@media (max-width: 600px) {
+	#scai-ticket-ai-panel.scai-ai-popup .scai-insert-mode-control,
+	#scai-ticket-ai-panel.scai-ai-popup .scai-insert-mode {
+		width: 100%;
+		min-width: 0;
+	}
+}
+
+/* Explicit classes protect popup controls from wp-admin and theme overrides. */
+.scai-ticket-ai-popup .scai-insert-row {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 8px;
+}
+
+.scai-ticket-ai-popup .scai-insert-label {
+	display: block;
+	margin: 0;
+	line-height: normal;
+}
+
+.scai-ticket-ai-popup .scai-insert-mode-control {
+	display: inline-flex;
+	align-items: center;
+	min-width: 0;
+	flex-direction: row;
+	gap: 8px;
+}
+
+.scai-ticket-ai-popup .scai-control,
+.scai-ticket-ai-popup .scai-button {
+	box-sizing: border-box;
+	height: 40px;
+	min-height: 40px;
+	border-radius: 6px;
+	font-size: 14px;
+	line-height: normal;
+	vertical-align: middle;
+}
+
+.scai-ticket-ai-popup select.scai-insert-mode-select.scai-control {
+	width: auto;
+	min-width: 190px;
+	max-width: 260px;
+	height: 40px;
+	min-height: 40px;
+	padding: 0 32px 0 10px;
+	border: 1px solid #bfdbfe;
+	border-radius: 6px;
+	background-color: #fff;
+	color: #1e293b;
+	font-size: 14px;
+	line-height: normal;
+}
+
+.scai-ticket-ai-popup .scai-insert-row > .scai-button {
+	padding: 0 14px;
+	border-radius: 6px;
+}
+
+@media (max-width: 600px) {
+	.scai-ticket-ai-popup .scai-insert-row,
+	.scai-ticket-ai-popup .scai-insert-mode-control,
+	.scai-ticket-ai-popup select.scai-insert-mode-select.scai-control {
+		width: 100%;
+		max-width: none;
+	}
+
+	.scai-ticket-ai-popup .scai-insert-mode-control {
+		align-items: stretch;
+		flex-direction: column;
+	}
+}

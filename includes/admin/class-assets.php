@@ -29,6 +29,13 @@ final class SCAI_Admin_Assets {
 	const TICKET_AI_STYLE_HANDLE = 'scai-admin-ticket-ai';
 
 	/**
+	 * Plugin admin style handle.
+	 *
+	 * @var string
+	 */
+	const ADMIN_STYLE_HANDLE = 'scai-admin';
+
+	/**
 	 * Initialize admin asset hooks.
 	 *
 	 * @return void
@@ -44,6 +51,15 @@ final class SCAI_Admin_Assets {
 	 * @return void
 	 */
 	public function enqueue_admin_assets( $hook_suffix ) {
+		if ( $this->should_enqueue_plugin_admin_style() ) {
+			wp_enqueue_style(
+				self::ADMIN_STYLE_HANDLE,
+				$this->get_asset_url( 'assets/css/admin.css' ),
+				array(),
+				$this->get_asset_version( 'assets/css/admin.css' )
+			);
+		}
+
 		if ( ! $this->should_enqueue_ticket_ai_assets( $hook_suffix ) ) {
 			return;
 		}
@@ -52,14 +68,14 @@ final class SCAI_Admin_Assets {
 			self::TICKET_AI_STYLE_HANDLE,
 			$this->get_asset_url( 'assets/css/admin-ticket-ai.css' ),
 			array(),
-			$this->get_asset_version()
+			$this->get_asset_version( 'assets/css/admin-ticket-ai.css' )
 		);
 
 		wp_enqueue_script(
 			self::TICKET_AI_SCRIPT_HANDLE,
 			$this->get_asset_url( 'assets/js/admin-ticket-ai.js' ),
 			array( 'jquery' ),
-			$this->get_asset_version(),
+			$this->get_asset_version( 'assets/js/admin-ticket-ai.js' ),
 			true
 		);
 
@@ -72,6 +88,17 @@ final class SCAI_Admin_Assets {
 				'strings' => $this->get_ticket_ai_strings(),
 			)
 		);
+	}
+
+	/**
+	 * Determine whether the current screen is owned by this plugin.
+	 *
+	 * @return bool
+	 */
+	private function should_enqueue_plugin_admin_style() {
+		$page = $this->get_admin_query_string( 'page' );
+
+		return 0 === strpos( $page, 'scai-' );
 	}
 
 	/**
@@ -203,10 +230,22 @@ final class SCAI_Admin_Assets {
 	/**
 	 * Get plugin asset version.
 	 *
+	 * @param string $relative_path Optional asset path for cache busting.
 	 * @return string
 	 */
-	private function get_asset_version() {
-		return defined( 'SCAI_VERSION' ) ? SCAI_VERSION : '1.0.0';
+	private function get_asset_version( $relative_path = '' ) {
+		$version       = defined( 'SCAI_VERSION' ) ? SCAI_VERSION : '1.0.0';
+		$relative_path = ltrim( sanitize_text_field( (string) $relative_path ), '/' );
+
+		if ( '' !== $relative_path && defined( 'SCAI_PLUGIN_PATH' ) ) {
+			$file = SCAI_PLUGIN_PATH . $relative_path;
+
+			if ( is_file( $file ) ) {
+				return $version . '.' . (string) filemtime( $file );
+			}
+		}
+
+		return $version;
 	}
 
 	/**

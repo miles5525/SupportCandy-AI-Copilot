@@ -1,0 +1,116 @@
+.scai-admin-page {
+	--scai-admin-control-height: 40px;
+	--scai-admin-control-radius: 6px;
+	--scai-admin-border: #bfdbfe;
+	--scai-admin-primary: #2563eb;
+	--scai-admin-primary-dark: #1d4ed8;
+}
+
+.scai-admin-page input[type="text"],
+.scai-admin-page input[type="number"],
+.scai-admin-page input[type="url"],
+.scai-admin-page input[type="email"],
+.scai-admin-page input[type="password"],
+.scai-admin-page select,
+.scai-admin-page .button {
+	min-height: var(--scai-admin-control-height);
+	border-radius: var(--scai-admin-control-radius);
+}
+
+.scai-admin-page input[type="text"],
+.scai-admin-page input[type="number"],
+.scai-admin-page input[type="url"],
+.scai-admin-page input[type="email"],
+.scai-admin-page input[type="password"],
+.scai-admin-page select {
+	border-color: var(--scai-admin-border);
+}
+
+.scai-admin-page .button-primary {
+	border-color: var(--scai-admin-primary);
+	background: var(--scai-admin-primary);
+}
+
+.scai-admin-page .button-primary:hover,
+.scai-admin-page .button-primary:focus {
+	border-color: var(--scai-admin-primary-dark);
+	background: var(--scai-admin-primary-dark);
+}
+
+.scai-usage-logs-page .scai-filter-form {
+	display: flex;
+	align-items: flex-end;
+	flex-wrap: wrap;
+	gap: 10px;
+	margin: 16px 0;
+}
+
+.scai-usage-logs-page .scai-filter-field {
+	display: flex;
+	flex: 0 1 150px;
+	min-width: 120px;
+	flex-direction: column;
+	gap: 5px;
+}
+
+.scai-usage-logs-page .scai-filter-feature {
+	flex-basis: 190px;
+}
+
+.scai-usage-logs-page .scai-filter-id {
+	flex-basis: 110px;
+}
+
+.scai-usage-logs-page .scai-filter-per-page {
+	flex-basis: 100px;
+}
+
+.scai-usage-logs-page .scai-filter-field label {
+	font-weight: 600;
+}
+
+.scai-usage-logs-page .scai-filter-field input,
+.scai-usage-logs-page .scai-filter-field select,
+.scai-usage-logs-page .scai-filter-submit .button {
+	width: 100%;
+	height: var(--scai-admin-control-height);
+	margin: 0;
+	line-height: normal;
+}
+
+.scai-usage-logs-page .scai-filter-submit {
+	flex: 0 0 auto;
+}
+
+.scai-usage-logs-page .scai-usage-summary-cards {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 16px;
+	margin: 16px 0 18px;
+}
+
+.scai-usage-logs-page .scai-usage-summary-card {
+	box-sizing: border-box;
+	flex: 1 1 220px;
+	min-width: 220px;
+	max-width: 320px;
+	margin: 0;
+	padding: 16px 20px;
+	border: 1px solid #dcdcde;
+	border-radius: var(--scai-admin-control-radius);
+	background: #fff;
+}
+
+.scai-usage-logs-page .scai-usage-summary-value {
+	display: inline-block;
+	margin-top: 6px;
+	font-size: 24px;
+	line-height: 1.2;
+}
+
+@media (max-width: 600px) {
+	.scai-usage-logs-page .scai-filter-field,
+	.scai-usage-logs-page .scai-filter-submit {
+		flex: 1 1 100%;
+	}
+}

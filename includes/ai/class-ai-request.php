@@ -205,12 +205,44 @@ final class SCAI_AI_Request {
 	}
 
 	/**
+	 * Set transient image inputs for a multimodal provider request.
+	 *
+	 * @param array<int, mixed> $images Raw prepared images.
+	 * @return void
+	 */
+	public function set_images( array $images ) {
+		$this->images = $this->sanitize_images( $images );
+	}
+
+	/**
 	 * Check whether request contains images.
 	 *
 	 * @return bool
 	 */
 	public function has_images() {
 		return ! empty( $this->images );
+	}
+
+	/**
+	 * Get a non-sensitive summary of transient request images.
+	 *
+	 * @return array{count: int, filenames: array<int, string>, mime_types: array<int, string>, sizes: array<int, int>}
+	 */
+	public function get_safe_image_summary() {
+		$summary = array(
+			'count'      => count( $this->images ),
+			'filenames'  => array(),
+			'mime_types' => array(),
+			'sizes'      => array(),
+		);
+
+		foreach ( $this->images as $image ) {
+			$summary['filenames'][]  = isset( $image['filename'] ) ? sanitize_file_name( $image['filename'] ) : '';
+			$summary['mime_types'][] = isset( $image['mime_type'] ) ? sanitize_mime_type( $image['mime_type'] ) : '';
+			$summary['sizes'][]      = isset( $image['size'] ) ? absint( $image['size'] ) : 0;
+		}
+
+		return $summary;
 	}
 
 	/**
@@ -271,7 +303,7 @@ final class SCAI_AI_Request {
 			'prompt'              => $this->prompt,
 			'messages'            => $this->messages,
 			'context'             => $this->context,
-			'images'              => $this->images,
+			'images'              => $this->get_safe_images_for_serialization(),
 			'stream'              => $this->stream,
 			'temperature'         => $this->temperature,
 			'max_tokens'          => $this->max_tokens,
@@ -343,26 +375,71 @@ final class SCAI_AI_Request {
 
 		$sanitized = array();
 
-		foreach ( $images as $image ) {
+		foreach ( array_slice( $images, 0, 3 ) as $image ) {
 			if ( ! is_array( $image ) ) {
 				continue;
 			}
 
-			$item = array(
-				'id'        => isset( $image['id'] ) ? absint( $image['id'] ) : 0,
-				'url'       => isset( $image['url'] ) ? esc_url_raw( (string) $image['url'] ) : '',
-				'mime_type' => isset( $image['mime_type'] ) ? sanitize_mime_type( (string) $image['mime_type'] ) : '',
-				'filename'  => isset( $image['filename'] ) ? sanitize_file_name( (string) $image['filename'] ) : '',
-			);
+			$data_url  = isset( $image['data_url'] ) && is_scalar( $image['data_url'] ) ? (string) $image['data_url'] : '';
+			$data_url  = '' === $data_url && isset( $image['image_data_url'] ) && is_scalar( $image['image_data_url'] ) ? (string) $image['image_data_url'] : $data_url;
+			$data_url  = '' === $data_url && isset( $image['url'] ) && is_scalar( $image['url'] ) ? (string) $image['url'] : $data_url;
+			$mime_type = isset( $image['mime_type'] ) ? sanitize_mime_type( (string) $image['mime_type'] ) : '';
 
-			if ( 0 === $item['id'] && '' === $item['url'] ) {
+			if ( ! $this->is_valid_image_data_url( $data_url, $mime_type ) ) {
 				continue;
 			}
+
+			$detail = isset( $image['detail'] ) && is_scalar( $image['detail'] ) ? sanitize_key( (string) $image['detail'] ) : 'low';
+			$item   = array(
+				'data_url'  => $data_url,
+				'mime_type' => $mime_type,
+				'filename'  => isset( $image['filename'] ) ? sanitize_file_name( (string) $image['filename'] ) : '',
+				'size'      => isset( $image['size'] ) ? absint( $image['size'] ) : ( isset( $image['file_size'] ) ? absint( $image['file_size'] ) : 0 ),
+				'detail'    => in_array( $detail, array( 'low', 'high', 'auto' ), true ) ? $detail : 'low',
+			);
 
 			$sanitized[] = $item;
 		}
 
 		return $sanitized;
+	}
+
+	/**
+	 * Validate a local prepared image data URL without decoding it.
+	 *
+	 * @param string $data_url  Prepared image data URL.
+	 * @param string $mime_type Claimed image MIME type.
+	 * @return bool
+	 */
+	private function is_valid_image_data_url( $data_url, $mime_type ) {
+		$mime_type    = sanitize_mime_type( (string) $mime_type );
+		$allowed_mime = array( 'image/jpeg', 'image/png', 'image/webp', 'image/gif' );
+
+		if ( ! in_array( $mime_type, $allowed_mime, true ) ) {
+			return false;
+		}
+
+		return 1 === preg_match( '#^data:' . preg_quote( $mime_type, '#' ) . ';base64,[A-Za-z0-9+/]+={0,2}$#', (string) $data_url );
+	}
+
+	/**
+	 * Get non-sensitive image descriptors for logging or serialization.
+	 *
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function get_safe_images_for_serialization() {
+		$safe = array();
+
+		foreach ( $this->images as $image ) {
+			$safe[] = array(
+				'filename'  => isset( $image['filename'] ) ? sanitize_file_name( $image['filename'] ) : '',
+				'mime_type' => isset( $image['mime_type'] ) ? sanitize_mime_type( $image['mime_type'] ) : '',
+				'size'      => isset( $image['size'] ) ? absint( $image['size'] ) : 0,
+				'included'  => true,
+			);
+		}
+
+		return $safe;
 	}
 
 	/**

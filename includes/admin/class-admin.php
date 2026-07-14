@@ -130,6 +130,15 @@ final class SCAI_Admin {
 
 		add_submenu_page(
 			self::MENU_SLUG,
+			esc_html__( 'SupportCandy AI Settings', 'supportcandy-ai' ),
+			esc_html__( 'Settings', 'supportcandy-ai' ),
+			self::CAPABILITY,
+			self::MENU_SLUG,
+			array( $this, 'render_settings_page' )
+		);
+
+		add_submenu_page(
+			self::MENU_SLUG,
 			esc_html__( 'AI Providers', 'supportcandy-ai' ),
 			esc_html__( 'AI Providers', 'supportcandy-ai' ),
 			self::CAPABILITY,

@@ -436,6 +436,7 @@ final class SCAI_Ticket_AI_Service {
 	 */
 	private function prepare_ticket_images_for_ai( array $package, array $args = array() ) {
 		$enabled     = $this->is_image_understanding_enabled();
+		$supported   = $this->active_provider_supports_images();
 		$context     = isset( $package['context'] ) && is_array( $package['context'] ) ? $package['context'] : array();
 		$attachments = isset( $context['attachments'] ) && is_array( $context['attachments'] ) ? $context['attachments'] : array();
 		$metadata    = array_merge(
@@ -443,12 +444,19 @@ final class SCAI_Ticket_AI_Service {
 			array(
 				'prepared_image_count'             => 0,
 				'prepared_image_filenames'         => array(),
+				'prepared_images'                   => array(),
+				'included_image_count'             => 0,
+				'included_image_filenames'         => array(),
+				'included_images'                   => array(),
+				'images_prepared_for_request'      => false,
+				'images_attached_to_request'       => false,
 				'image_understanding_enabled'      => $enabled,
+				'provider_supports_images'          => $supported,
 				'image_content_provided_to_model' => false,
 			)
 		);
 
-		if ( ! $enabled || ! $this->image_attachment_preparer instanceof SCAI_Image_Attachment_Preparer ) {
+		if ( ! $enabled || ! $supported || ! $this->image_attachment_preparer instanceof SCAI_Image_Attachment_Preparer ) {
 			return array(
 				'images'   => array(),
 				'metadata' => $metadata,
@@ -504,11 +512,17 @@ final class SCAI_Ticket_AI_Service {
 			$mime_type = isset( $image['mime_type'] ) && is_scalar( $image['mime_type'] ) ? sanitize_mime_type( (string) $image['mime_type'] ) : '';
 
 			$images[] = array(
-				'id'        => 0,
-				'url'       => (string) $image['image_data_url'],
+				'data_url'  => (string) $image['image_data_url'],
 				'mime_type' => $mime_type,
 				'filename'  => $filename,
+				'size'      => isset( $image['file_size'] ) ? absint( $image['file_size'] ) : 0,
 				'detail'    => isset( $image['detail'] ) ? sanitize_key( $image['detail'] ) : 'low',
+			);
+			$metadata['prepared_images'][] = array(
+				'filename'               => $filename,
+				'mime_type'              => $mime_type,
+				'size'                   => isset( $image['file_size'] ) ? absint( $image['file_size'] ) : 0,
+				'included_in_ai_request' => true,
 			);
 
 			if ( '' !== $filename ) {
@@ -518,12 +532,33 @@ final class SCAI_Ticket_AI_Service {
 
 		$metadata['prepared_image_filenames']         = array_values( array_unique( $metadata['prepared_image_filenames'] ) );
 		$metadata['prepared_image_count']             = count( $images );
+		$metadata['included_images']                   = $metadata['prepared_images'];
+		$metadata['included_image_count']              = $metadata['prepared_image_count'];
+		$metadata['included_image_filenames']          = $metadata['prepared_image_filenames'];
+		$metadata['images_prepared_for_request']       = 0 < $metadata['prepared_image_count'];
+		$metadata['images_attached_to_request']        = 0 < $metadata['included_image_count'];
 		$metadata['image_content_provided_to_model'] = 0 < $metadata['prepared_image_count'];
 
 		return array(
 			'images'   => $images,
 			'metadata' => $metadata,
 		);
+	}
+
+	/**
+	 * Determine whether the active provider can accept image inputs.
+	 *
+	 * @return bool
+	 */
+	private function active_provider_supports_images() {
+		if ( ! class_exists( 'SCAI_Provider_Manager' ) ) {
+			return false;
+		}
+
+		$manager  = new SCAI_Provider_Manager();
+		$provider = $manager->get_active_provider();
+
+		return $provider && method_exists( $provider, 'supports_images' ) && (bool) $provider->supports_images();
 	}
 
 	/**
@@ -563,7 +598,7 @@ final class SCAI_Ticket_AI_Service {
 	 * @param array<string, mixed> $metadata     Safe attachment metadata.
 	 * @return array<string, mixed>
 	 */
-	private function add_attachment_handoff_note( array $request_args, array $metadata ) {
+	private function add_attachment_handoff_note( array $request_args, array $metadata, $feature = '' ) {
 		$attachment_count = isset( $metadata['attachment_count'] ) ? absint( $metadata['attachment_count'] ) : 0;
 
 		if ( 0 === $attachment_count ) {
@@ -580,8 +615,60 @@ final class SCAI_Ticket_AI_Service {
 
 		$note .= ' ' . __( 'Use inspected excerpts as evidence. Mention metadata-only attachments honestly, and do not claim unprovided image content was inspected.', 'supportcandy-ai' );
 
+		if ( ! empty( $metadata['images_attached_to_request'] ) && ! empty( $metadata['included_image_filenames'] ) && is_array( $metadata['included_image_filenames'] ) ) {
+			$filenames = array();
+
+			foreach ( $metadata['included_image_filenames'] as $filename ) {
+				$filename = sanitize_file_name( $filename );
+
+				if ( '' !== $filename ) {
+					$filenames[] = $filename;
+				}
+			}
+
+			if ( ! empty( $filenames ) ) {
+				$note .= "\n\n" . sprintf(
+					/* translators: %s: comma-separated image filenames. */
+					__( 'Runtime vision status: image attachments are included in this AI request for visual inspection: %s.', 'supportcandy-ai' ),
+					implode( ', ', $filenames )
+				);
+
+				if ( 'ticket_summary' === sanitize_key( $feature ) ) {
+					$note .= ' ' . __( "At least one image is attached to this AI request. In the Attachments section, for included image attachments, inspect the image visually. If you can see it, say 'Content inspected: yes' and describe one visible detail. If you cannot access the image, say 'Image was attached but could not be inspected.'", 'supportcandy-ai' );
+				}
+			}
+		}
+
 		$prompt = isset( $request_args['prompt'] ) && is_scalar( $request_args['prompt'] ) ? sanitize_textarea_field( (string) $request_args['prompt'] ) : '';
 		$request_args['prompt'] = trim( $prompt . "\n\n" . $note );
+
+		return $request_args;
+	}
+
+	/**
+	 * Add per-request visual inspection instructions without image payload data.
+	 *
+	 * @param array<string, mixed> $request_args Request arguments.
+	 * @param array<string, mixed> $metadata     Safe image metadata.
+	 * @return array<string, mixed>
+	 */
+	private function add_image_request_instructions( array $request_args, array $metadata ) {
+		$prompt_engine = $this->get_prompt_engine();
+
+		if ( ! $prompt_engine || ! method_exists( $prompt_engine, 'build_image_request_instructions' ) ) {
+			return $request_args;
+		}
+
+		$instructions = $prompt_engine->build_image_request_instructions( $metadata );
+
+		if ( '' === $instructions ) {
+			return $request_args;
+		}
+
+		$system = isset( $request_args['system_instructions'] ) && is_scalar( $request_args['system_instructions'] )
+			? sanitize_textarea_field( (string) $request_args['system_instructions'] )
+			: '';
+		$request_args['system_instructions'] = trim( $system . "\n\nImage inputs for this request:\n" . $instructions );
 
 		return $request_args;
 	}
@@ -638,22 +725,26 @@ final class SCAI_Ticket_AI_Service {
 		}
 
 		$image_preparation = $this->prepare_ticket_images_for_ai( $package );
+		$image_validator   = SCAI_AI_Request::from_array( array() );
+		$image_validator->set_images( $image_preparation['images'] );
+		$runtime_images = $image_validator->get_images();
+		$image_preparation['metadata']['prepared_image_count']             = count( $runtime_images );
+		$image_preparation['metadata']['included_image_count']              = count( $runtime_images );
+		$image_preparation['metadata']['images_prepared_for_request']       = ! empty( $image_preparation['images'] );
+		$image_preparation['metadata']['images_attached_to_request']        = $image_validator->has_images();
+		$image_preparation['metadata']['image_content_provided_to_model'] = $image_validator->has_images();
+		$package['image_metadata']                                         = $image_preparation['metadata'];
 
-		if ( ! empty( $image_preparation['images'] ) ) {
-			$request_args['images'] = $image_preparation['images'];
-		}
-
-		$normalized_request = SCAI_AI_Request::from_array( $request_args );
-		$image_preparation['metadata']['image_content_provided_to_model'] = $normalized_request->has_images();
-		$package['image_metadata'] = $image_preparation['metadata'];
-
-		$request_args = $this->add_attachment_handoff_note( $request_args, $image_preparation['metadata'] );
+		$request_args = $this->add_image_request_instructions( $request_args, $image_preparation['metadata'] );
+		$request_args = $this->add_attachment_handoff_note( $request_args, $image_preparation['metadata'], $feature );
 
 		$request_args['metadata'] = isset( $request_args['metadata'] ) && is_array( $request_args['metadata'] )
 			? array_merge( $request_args['metadata'], $this->build_metadata( $ticket_id, $feature, $package ) )
 			: $this->build_metadata( $ticket_id, $feature, $package );
 
-		$request  = SCAI_AI_Request::from_array( $request_args );
+		$request = SCAI_AI_Request::from_array( $request_args );
+		$request->set_images( $runtime_images );
+		$image_preparation['metadata']['images_attached_to_request'] = $request->has_images();
 		$response = $ai_engine->generate_response( $request );
 
 		if ( $response instanceof SCAI_AI_Response ) {
@@ -722,6 +813,9 @@ final class SCAI_Ticket_AI_Service {
 					'format'                        => $response_options['format'],
 					'prepared_image_count'          => isset( $image_metadata['prepared_image_count'] ) ? absint( $image_metadata['prepared_image_count'] ) : 0,
 					'prepared_image_filenames'      => isset( $image_metadata['prepared_image_filenames'] ) && is_array( $image_metadata['prepared_image_filenames'] ) ? $image_metadata['prepared_image_filenames'] : array(),
+					'images_attached_to_request'    => ! empty( $image_metadata['images_attached_to_request'] ),
+					'included_image_count'          => isset( $image_metadata['included_image_count'] ) ? absint( $image_metadata['included_image_count'] ) : 0,
+					'included_image_filenames'      => isset( $image_metadata['included_image_filenames'] ) && is_array( $image_metadata['included_image_filenames'] ) ? $image_metadata['included_image_filenames'] : array(),
 				),
 				$workflow_metadata
 			),

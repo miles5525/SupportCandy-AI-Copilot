@@ -478,7 +478,8 @@
 		var existing = document.getElementById( panelId );
 		var ticketId = detection && detection.id ? detection.id : 0;
 		var confidence = detection && detection.confidence ? detection.confidence : '';
-		var showManualInput = !! ( viewState && viewState.allowManualInput ) || confidence !== 'high';
+		var debugEnabled = getConfig().debug === true;
+		var showManualInput = debugEnabled && ( !! ( viewState && viewState.allowManualInput ) || confidence !== 'high' );
 		var panel;
 		var popupHeader;
 		var popupBody;
@@ -518,7 +519,7 @@
 
 		panel = document.createElement( 'section' );
 		panel.id = panelId;
-		panel.className = 'scai-ticket-ai-panel scai-ai-popup';
+		panel.className = 'scai-ticket-ai-panel scai-ticket-ai-popup scai-ai-popup';
 		panel.setAttribute( 'data-ticket-id', confidence === 'high' ? String( ticketId ) : '' );
 		panel.setAttribute( 'data-ticket-confidence', confidence );
 		panel.setAttribute( 'aria-hidden', 'true' );
@@ -555,9 +556,12 @@
 		} else if ( ticketId && confidence === 'high' ) {
 			status.textContent = '';
 			status.hidden = true;
-		} else {
+		} else if ( debugEnabled ) {
 			status.textContent = 'Enter the internal SupportCandy Ticket ID to use AI.';
 			status.hidden = false;
+		} else {
+			status.textContent = '';
+			status.hidden = true;
 		}
 
 		manualWrap = document.createElement( 'div' );
@@ -632,17 +636,18 @@
 		output.setAttribute( 'aria-live', 'polite' );
 
 		resultActions = document.createElement( 'div' );
-		resultActions.className = 'scai-result-actions';
+		resultActions.className = 'scai-result-actions scai-insert-row';
 		resultActions.style.display = 'none';
 
-		copyButton = createButton( 'scai-copy-result', 'Copy Result' );
-		insertButton = createButton( 'scai-insert-result', 'Insert into Reply Editor' );
+		copyButton = createButton( 'scai-copy-result scai-button-secondary', 'Copy Result' );
+		insertButton = createButton( 'scai-insert-result scai-button-secondary', 'Insert into Reply Editor' );
 		insertModeControl = document.createElement( 'label' );
 		insertModeControl.className = 'scai-insert-mode-control';
 		insertModeLabel = document.createElement( 'span' );
+		insertModeLabel.className = 'scai-insert-label';
 		insertModeLabel.textContent = 'Insert Mode';
 		insertMode = document.createElement( 'select' );
-		insertMode.className = 'scai-insert-mode';
+		insertMode.className = 'scai-insert-mode scai-insert-mode-select scai-control';
 		insertModeOptions = [
 			[ 'merge', 'Merge with my draft' ],
 			[ 'append', 'Append below draft' ],
@@ -659,7 +664,7 @@
 
 		insertModeControl.appendChild( insertModeLabel );
 		insertModeControl.appendChild( insertMode );
-		applyMergedButton = createButton( 'scai-apply-merged-reply', 'Apply Merged Reply' );
+		applyMergedButton = createButton( 'scai-apply-merged-reply scai-button-secondary', 'Apply Merged Reply' );
 		applyMergedButton.style.display = 'none';
 
 		resultActions.appendChild( insertModeControl );
@@ -1090,7 +1095,8 @@
 		var status = panel ? panel.querySelector( '.scai-ticket-ai-status' ) : null;
 		var manualWrap = panel ? panel.querySelector( '.scai-manual-ticket-id-wrap' ) : null;
 		var manualInput = panel ? panel.querySelector( '.scai-manual-ticket-id' ) : null;
-		var showManualInput = !! ( viewState && viewState.allowManualInput ) || confidence !== 'high';
+		var debugEnabled = getConfig().debug === true;
+		var showManualInput = debugEnabled && ( !! ( viewState && viewState.allowManualInput ) || confidence !== 'high' );
 
 		if ( ! panel ) {
 			return;
@@ -1110,9 +1116,12 @@
 			} else if ( ticketId && confidence === 'high' ) {
 				setElementText( status, '' );
 				status.hidden = true;
-			} else {
+			} else if ( debugEnabled ) {
 				setElementText( status, 'Enter the internal SupportCandy Ticket ID to use AI.' );
 				status.hidden = false;
+			} else {
+				setElementText( status, '' );
+				status.hidden = true;
 			}
 		}
 
@@ -1185,7 +1194,7 @@
 		var button = document.createElement( 'button' );
 
 		button.type = 'button';
-		button.className = 'button ' + className;
+		button.className = 'button scai-button ' + className;
 		button.textContent = text;
 
 		return button;
@@ -2426,9 +2435,9 @@
 		var preview = document.createElement( 'p' );
 		var fullContent = document.createElement( 'pre' );
 		var actions = document.createElement( 'div' );
-		var copyButton = createButton( 'scai-copy-history-item', 'Copy' );
-		var insertButton = createButton( 'scai-insert-history-item', 'Insert' );
-		var viewButton = createButton( 'scai-view-history-item', 'View full' );
+		var copyButton = createButton( 'scai-copy-history-item scai-button-secondary', 'Copy' );
+		var insertButton = createButton( 'scai-insert-history-item scai-button-secondary', 'Insert' );
+		var viewButton = createButton( 'scai-view-history-item scai-button-secondary', 'View full' );
 		var content = item && typeof item.content === 'string' ? item.content : '';
 		var metaParts = [];
 

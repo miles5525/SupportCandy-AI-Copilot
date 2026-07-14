@@ -59,7 +59,7 @@ final class SCAI_Usage_Logs_Page {
 		}
 
 		?>
-		<div class="wrap">
+		<div class="wrap scai-admin-page scai-usage-logs-page">
 			<h1><?php echo esc_html__( 'AI Usage Logs', 'supportcandy-ai' ); ?></h1>
 			<p><?php echo esc_html__( 'View recent SupportCandy AI requests, token usage, status, and errors.', 'supportcandy-ai' ); ?></p>
 
@@ -286,37 +286,49 @@ final class SCAI_Usage_Logs_Page {
 	public function render_filters() {
 		$filters = $this->get_filters();
 		?>
-		<form method="get">
+		<form method="get" class="scai-filter-form">
 			<input type="hidden" name="page" value="<?php echo esc_attr( self::PAGE_SLUG ); ?>">
-			<label for="scai-status"><?php echo esc_html__( 'Status', 'supportcandy-ai' ); ?></label>
-			<select id="scai-status" name="status">
-				<option value=""><?php echo esc_html__( 'All', 'supportcandy-ai' ); ?></option>
-				<option value="success" <?php selected( $filters['status'], 'success' ); ?>><?php echo esc_html__( 'Success', 'supportcandy-ai' ); ?></option>
-				<option value="error" <?php selected( $filters['status'], 'error' ); ?>><?php echo esc_html__( 'Error', 'supportcandy-ai' ); ?></option>
-			</select>
+			<div class="scai-filter-field">
+				<label for="scai-status"><?php echo esc_html__( 'Status', 'supportcandy-ai' ); ?></label>
+				<select id="scai-status" name="status">
+					<option value=""><?php echo esc_html__( 'All', 'supportcandy-ai' ); ?></option>
+					<option value="success" <?php selected( $filters['status'], 'success' ); ?>><?php echo esc_html__( 'Success', 'supportcandy-ai' ); ?></option>
+					<option value="error" <?php selected( $filters['status'], 'error' ); ?>><?php echo esc_html__( 'Error', 'supportcandy-ai' ); ?></option>
+				</select>
+			</div>
 
-			<label for="scai-feature"><?php echo esc_html__( 'Feature', 'supportcandy-ai' ); ?></label>
-			<select id="scai-feature" name="feature">
-				<option value=""><?php echo esc_html__( 'All', 'supportcandy-ai' ); ?></option>
-				<?php foreach ( $this->get_allowed_features() as $feature ) : ?>
-					<option value="<?php echo esc_attr( $feature ); ?>" <?php selected( $filters['feature'], $feature ); ?>><?php echo esc_html( $this->get_feature_label( $feature ) ); ?></option>
-				<?php endforeach; ?>
-			</select>
+			<div class="scai-filter-field scai-filter-feature">
+				<label for="scai-feature"><?php echo esc_html__( 'Feature', 'supportcandy-ai' ); ?></label>
+				<select id="scai-feature" name="feature">
+					<option value=""><?php echo esc_html__( 'All', 'supportcandy-ai' ); ?></option>
+					<?php foreach ( $this->get_allowed_features() as $feature ) : ?>
+						<option value="<?php echo esc_attr( $feature ); ?>" <?php selected( $filters['feature'], $feature ); ?>><?php echo esc_html( $this->get_feature_label( $feature ) ); ?></option>
+					<?php endforeach; ?>
+				</select>
+			</div>
 
-			<label for="scai-ticket-id"><?php echo esc_html__( 'Ticket ID', 'supportcandy-ai' ); ?></label>
-			<input id="scai-ticket-id" name="ticket_id" type="number" min="1" value="<?php echo esc_attr( $filters['ticket_id'] ? $filters['ticket_id'] : '' ); ?>">
+			<div class="scai-filter-field scai-filter-id">
+				<label for="scai-ticket-id"><?php echo esc_html__( 'Ticket ID', 'supportcandy-ai' ); ?></label>
+				<input id="scai-ticket-id" name="ticket_id" type="number" min="1" value="<?php echo esc_attr( $filters['ticket_id'] ? $filters['ticket_id'] : '' ); ?>">
+			</div>
 
-			<label for="scai-agent-id"><?php echo esc_html__( 'Agent ID', 'supportcandy-ai' ); ?></label>
-			<input id="scai-agent-id" name="agent_id" type="number" min="1" value="<?php echo esc_attr( $filters['agent_id'] ? $filters['agent_id'] : '' ); ?>">
+			<div class="scai-filter-field scai-filter-id">
+				<label for="scai-agent-id"><?php echo esc_html__( 'Agent ID', 'supportcandy-ai' ); ?></label>
+				<input id="scai-agent-id" name="agent_id" type="number" min="1" value="<?php echo esc_attr( $filters['agent_id'] ? $filters['agent_id'] : '' ); ?>">
+			</div>
 
-			<label for="scai-per-page"><?php echo esc_html__( 'Per page', 'supportcandy-ai' ); ?></label>
-			<select id="scai-per-page" name="per_page">
-				<?php foreach ( array( 20, 50, 100 ) as $per_page ) : ?>
-					<option value="<?php echo esc_attr( $per_page ); ?>" <?php selected( $filters['per_page'], $per_page ); ?>><?php echo esc_html( $per_page ); ?></option>
-				<?php endforeach; ?>
-			</select>
+			<div class="scai-filter-field scai-filter-per-page">
+				<label for="scai-per-page"><?php echo esc_html__( 'Per page', 'supportcandy-ai' ); ?></label>
+				<select id="scai-per-page" name="per_page">
+					<?php foreach ( array( 20, 50, 100 ) as $per_page ) : ?>
+						<option value="<?php echo esc_attr( $per_page ); ?>" <?php selected( $filters['per_page'], $per_page ); ?>><?php echo esc_html( $per_page ); ?></option>
+					<?php endforeach; ?>
+				</select>
+			</div>
 
-			<?php submit_button( __( 'Filter', 'supportcandy-ai' ), 'secondary', 'filter_action', false ); ?>
+			<div class="scai-filter-submit">
+				<?php submit_button( __( 'Filter', 'supportcandy-ai' ), 'secondary', 'filter_action', false ); ?>
+			</div>
 		</form>
 		<?php
 	}
@@ -335,11 +347,11 @@ final class SCAI_Usage_Logs_Page {
 			__( 'Total tokens', 'supportcandy-ai' )        => $this->format_tokens( $counts['total_tokens'] ),
 		);
 		?>
-		<div style="display:flex; flex-wrap:wrap; gap:12px; margin:16px 0;">
+		<div class="scai-usage-summary-cards">
 			<?php foreach ( $cards as $label => $value ) : ?>
-				<div class="postbox" style="min-width:180px; margin:0; padding:16px;">
+				<div class="scai-usage-summary-card">
 					<strong><?php echo esc_html( $label ); ?></strong><br>
-					<span style="font-size:24px;"><?php echo esc_html( $value ); ?></span>
+					<span class="scai-usage-summary-value"><?php echo esc_html( $value ); ?></span>
 				</div>
 			<?php endforeach; ?>
 		</div>

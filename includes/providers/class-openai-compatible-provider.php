@@ -223,6 +223,7 @@ final class SCAI_OpenAI_Compatible_Provider extends SCAI_Abstract_Provider {
 		$model    = $this->resolve_model( $ai_request, $config );
 		$endpoint = $this->build_chat_completions_endpoint( $config['base_url'] );
 		$payload  = $this->build_payload( $ai_request, $model );
+		$payload_image_metadata = $this->get_safe_payload_image_metadata( $payload );
 		$headers  = $this->build_headers( $config );
 
 		$http_response = $this->http_client->post_json(
@@ -237,7 +238,8 @@ final class SCAI_OpenAI_Compatible_Provider extends SCAI_Abstract_Provider {
 		return $this->normalize_provider_response(
 			$http_response,
 			$model,
-			isset( $http_response['duration_ms'] ) ? absint( $http_response['duration_ms'] ) : 0
+			isset( $http_response['duration_ms'] ) ? absint( $http_response['duration_ms'] ) : 0,
+			$payload_image_metadata
 		);
 	}
 
@@ -354,52 +356,105 @@ final class SCAI_OpenAI_Compatible_Provider extends SCAI_Abstract_Provider {
 			);
 		}
 
-		if ( '' !== $request->get_prompt() || $request->has_images() ) {
-			$messages[] = $this->build_user_message( $request );
-		}
-
-		return $messages;
-	}
-
-	/**
-	 * Build final user message.
-	 *
-	 * @param SCAI_AI_Request $request AI request.
-	 * @return array<string, mixed>
-	 */
-	private function build_user_message( SCAI_AI_Request $request ) {
-		if ( ! $request->has_images() ) {
-			return array(
+		if ( '' !== $request->get_prompt() ) {
+			$messages[] = array(
 				'role'    => 'user',
 				'content' => $request->get_prompt(),
 			);
 		}
 
-		$content = array();
+		return $this->attach_images_to_last_user_message( $messages, $request );
+	}
 
-		if ( '' !== $request->get_prompt() ) {
-			$content[] = array(
-				'type' => 'text',
-				'text' => $request->get_prompt(),
-			);
+	/**
+	 * Attach transient images to the last user message in OpenAI format.
+	 *
+	 * @param array<int, array<string, mixed>> $messages Chat messages.
+	 * @param SCAI_AI_Request                 $request  AI request.
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function attach_images_to_last_user_message( array $messages, SCAI_AI_Request $request ) {
+		if ( ! $request->has_images() || ! $this->supports_images() ) {
+			return $messages;
 		}
 
+		$last_user_index = null;
+
+		for ( $index = count( $messages ) - 1; $index >= 0; $index-- ) {
+			if ( isset( $messages[ $index ]['role'] ) && 'user' === $messages[ $index ]['role'] ) {
+				$last_user_index = $index;
+				break;
+			}
+		}
+
+		if ( null === $last_user_index ) {
+			return $messages;
+		}
+
+		$existing_user_text = isset( $messages[ $last_user_index ]['content'] ) && is_scalar( $messages[ $last_user_index ]['content'] )
+			? sanitize_textarea_field( (string) $messages[ $last_user_index ]['content'] )
+			: '';
+		$content = array(
+			array(
+				'type' => 'text',
+				'text' => $existing_user_text,
+			),
+		);
+
 		foreach ( $request->get_images() as $image ) {
-			if ( empty( $image['url'] ) ) {
+			$data_url = isset( $image['data_url'] ) && is_scalar( $image['data_url'] ) ? (string) $image['data_url'] : '';
+
+			if ( '' === $data_url || 0 !== strpos( $data_url, 'data:image/' ) ) {
 				continue;
 			}
 
-			$content[] = array(
+			$image_item = array(
 				'type'      => 'image_url',
 				'image_url' => array(
-					'url' => esc_url_raw( $image['url'] ),
+					'url' => $data_url,
 				),
 			);
+
+			if ( isset( $image['detail'] ) && in_array( $image['detail'], array( 'low', 'high', 'auto' ), true ) ) {
+				$image_item['image_url']['detail'] = $image['detail'];
+			}
+
+			$content[] = $image_item;
+		}
+
+		$messages[ $last_user_index ]['content'] = $content;
+
+		return $messages;
+	}
+
+	/**
+	 * Summarize image inclusion in a provider payload without retaining data.
+	 *
+	 * @param array<string, mixed> $payload Provider payload.
+	 * @return array<string, mixed>
+	 */
+	private function get_safe_payload_image_metadata( array $payload ) {
+		$image_count     = 0;
+		$multimodal_user = false;
+		$messages        = isset( $payload['messages'] ) && is_array( $payload['messages'] ) ? $payload['messages'] : array();
+
+		foreach ( $messages as $message ) {
+			if ( ! is_array( $message ) || 'user' !== ( isset( $message['role'] ) ? $message['role'] : '' ) || ! isset( $message['content'] ) || ! is_array( $message['content'] ) ) {
+				continue;
+			}
+
+			foreach ( $message['content'] as $part ) {
+				if ( is_array( $part ) && isset( $part['type'] ) && 'image_url' === $part['type'] ) {
+					$image_count++;
+					$multimodal_user = true;
+				}
+			}
 		}
 
 		return array(
-			'role'    => 'user',
-			'content' => $content,
+			'provider_payload_had_images'              => 0 < $image_count,
+			'provider_payload_image_count'             => $image_count,
+			'provider_payload_multimodal_user_message' => $multimodal_user,
 		);
 	}
 
@@ -409,9 +464,10 @@ final class SCAI_OpenAI_Compatible_Provider extends SCAI_Abstract_Provider {
 	 * @param array<string, mixed> $http_response HTTP client response.
 	 * @param string               $model         Model used.
 	 * @param int                  $duration_ms   Duration in milliseconds.
+	 * @param array<string, mixed> $payload_image_metadata Safe image payload metadata.
 	 * @return SCAI_AI_Response
 	 */
-	private function normalize_provider_response( array $http_response, $model, $duration_ms ) {
+	private function normalize_provider_response( array $http_response, $model, $duration_ms, array $payload_image_metadata = array() ) {
 		if ( empty( $http_response['success'] ) ) {
 			$provider_error = $this->extract_provider_error( $http_response );
 
@@ -423,6 +479,7 @@ final class SCAI_OpenAI_Compatible_Provider extends SCAI_Abstract_Provider {
 					'model'        => $model,
 					'duration_ms'  => $duration_ms,
 					'raw_response' => $this->get_safe_raw_response( $http_response ),
+					'metadata'     => $payload_image_metadata,
 				)
 			);
 		}
@@ -442,6 +499,7 @@ final class SCAI_OpenAI_Compatible_Provider extends SCAI_Abstract_Provider {
 					'model'        => $model,
 					'duration_ms'  => $duration_ms,
 					'raw_response' => $this->get_safe_raw_response( $http_response ),
+					'metadata'     => $payload_image_metadata,
 				)
 			);
 		}
@@ -462,6 +520,7 @@ final class SCAI_OpenAI_Compatible_Provider extends SCAI_Abstract_Provider {
 				'duration_ms'       => $duration_ms,
 				'finish_reason'     => $this->extract_finish_reason( $json ),
 				'raw_response'      => $this->get_safe_raw_response( $http_response ),
+				'metadata'          => $payload_image_metadata,
 			)
 		);
 	}
@@ -616,9 +675,9 @@ final class SCAI_OpenAI_Compatible_Provider extends SCAI_Abstract_Provider {
 		return array(
 			'status_code' => isset( $http_response['status_code'] ) ? absint( $http_response['status_code'] ) : 0,
 			'message'     => isset( $http_response['message'] ) ? sanitize_text_field( (string) $http_response['message'] ) : '',
-			'headers'     => isset( $http_response['headers'] ) && is_array( $http_response['headers'] ) ? $http_response['headers'] : array(),
+			'headers'     => isset( $http_response['headers'] ) && is_array( $http_response['headers'] ) ? $this->redact_raw_response_value( $http_response['headers'] ) : array(),
 			'json'        => isset( $http_response['json'] ) ? $this->redact_raw_response_value( $http_response['json'] ) : null,
-			'request'     => isset( $http_response['request'] ) && is_array( $http_response['request'] ) ? $http_response['request'] : array(),
+			'request'     => isset( $http_response['request'] ) && is_array( $http_response['request'] ) ? $this->redact_raw_response_value( $http_response['request'] ) : array(),
 		);
 	}
 
@@ -651,6 +710,8 @@ final class SCAI_OpenAI_Compatible_Provider extends SCAI_Abstract_Provider {
 		if ( is_numeric( $value ) ) {
 			return $value;
 		}
+
+		$value = preg_replace( '#data:image/[a-z0-9.+-]+;base64,[a-z0-9+/=]+#i', '[redacted-image-data]', (string) $value );
 
 		return sanitize_textarea_field( (string) $value );
 	}

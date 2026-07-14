@@ -132,7 +132,7 @@ final class SCAI_Settings_Page {
 
 		?>
 		<div class="wrap scai-admin-page">
-			<h1><?php echo esc_html__( 'SupportCandy AI Assistant', 'supportcandy-ai' ); ?></h1>
+			<h1><?php echo esc_html__( 'SupportCandy AI Settings', 'supportcandy-ai' ); ?></h1>
 
 			<p>
 				<?php
@@ -143,6 +143,17 @@ final class SCAI_Settings_Page {
 				?>
 			</p>
 
+			<div class="notice notice-info inline">
+				<p>
+					<?php
+					echo esc_html__(
+						'These settings control SupportCandy AI Assistant only. They do not modify SupportCandy tickets, replies, or official SupportCandy AI settings.',
+						'supportcandy-ai'
+					);
+					?>
+				</p>
+			</div>
+
 			<?php $this->render_notice(); ?>
 
 			<?php $this->render_project_status(); ?>
@@ -150,10 +161,6 @@ final class SCAI_Settings_Page {
 			<hr />
 
 			<?php $this->render_general_settings_form(); ?>
-
-			<hr />
-
-			<?php $this->render_next_steps(); ?>
 		</div>
 		<?php
 	}
@@ -264,13 +271,13 @@ final class SCAI_Settings_Page {
 								class="small-text"
 							/>
 							<p class="description">
-								<?php echo esc_html__( 'Number of days to retain AI conversation history. Default is 30 days.', 'supportcandy-ai' ); ?>
+								<?php echo esc_html__( 'Number of days to keep AI conversation history created by this plugin. This does not delete SupportCandy tickets, replies, or customer data. Default is 30 days.', 'supportcandy-ai' ); ?>
 							</p>
 						</td>
 					</tr>
 
 					<tr>
-						<th scope="row"><?php echo esc_html__( 'Image Understanding', 'supportcandy-ai' ); ?></th>
+						<th scope="row"><?php echo esc_html__( 'Analyze Image Attachments', 'supportcandy-ai' ); ?></th>
 						<td>
 							<label for="scai_image_understanding_enabled">
 								<input
@@ -280,8 +287,11 @@ final class SCAI_Settings_Page {
 									value="1"
 									<?php checked( $image_understanding_enabled ); ?>
 								/>
-								<?php echo esc_html__( 'Analyze recent ticket screenshots when generating AI context.', 'supportcandy-ai' ); ?>
+								<?php echo esc_html__( 'Enable visual inspection of supported image attachments.', 'supportcandy-ai' ); ?>
 							</label>
+							<p class="description">
+								<?php echo esc_html__( 'When enabled, eligible JPG, PNG, WebP, and GIF attachments can be visually inspected during summaries and replies when the active provider and model support vision. Image data is used only for the AI request and is not stored in usage logs or conversation history.', 'supportcandy-ai' ); ?>
+							</p>
 						</td>
 					</tr>
 
@@ -296,8 +306,11 @@ final class SCAI_Settings_Page {
 									value="1"
 									<?php checked( $knowledge_sync_enabled ); ?>
 								/>
-								<?php echo esc_html__( 'Enable scheduled knowledge base synchronization.', 'supportcandy-ai' ); ?>
+								<?php echo esc_html__( 'Reserve knowledge synchronization for future integrations.', 'supportcandy-ai' ); ?>
 							</label>
+							<p class="description">
+								<?php echo esc_html__( 'Reserved for knowledge base synchronization. This may be used by future BetterDocs or documentation integrations.', 'supportcandy-ai' ); ?>
+							</p>
 						</td>
 					</tr>
 
@@ -315,7 +328,7 @@ final class SCAI_Settings_Page {
 								class="large-text"
 							><?php echo esc_textarea( $company_instructions ); ?></textarea>
 							<p class="description">
-								<?php echo esc_html__( 'These instructions will be applied to every AI request. Keep them clear, specific, and company-wide.', 'supportcandy-ai' ); ?>
+								<?php echo esc_html__( 'Optional instructions added to AI prompts, such as support tone, escalation rules, refund policy wording, reply style, and actions the AI should not promise. Do not enter API keys, passwords, or private secrets.', 'supportcandy-ai' ); ?>
 							</p>
 						</td>
 					</tr>
@@ -331,10 +344,10 @@ final class SCAI_Settings_Page {
 									value="1"
 									<?php checked( $delete_data_on_uninstall ); ?>
 								/>
-								<?php echo esc_html__( 'Delete plugin tables and settings when the plugin is uninstalled.', 'supportcandy-ai' ); ?>
+								<?php echo esc_html__( 'Delete SupportCandy AI Assistant data when the plugin is uninstalled.', 'supportcandy-ai' ); ?>
 							</label>
 							<p class="description">
-								<?php echo esc_html__( 'Keep this disabled unless you intentionally want to remove all SupportCandy AI Assistant data during uninstall.', 'supportcandy-ai' ); ?>
+								<?php echo esc_html__( 'When enabled, uninstalling the plugin will delete plugin-owned data such as AI conversations, usage logs, knowledge records, and settings. SupportCandy tickets are not deleted. Keep this disabled during private beta unless you intentionally want to clean up test data.', 'supportcandy-ai' ); ?>
 							</p>
 						</td>
 					</tr>
@@ -343,26 +356,6 @@ final class SCAI_Settings_Page {
 
 			<?php submit_button( esc_html__( 'Save Settings', 'supportcandy-ai' ), 'primary', 'scai_settings_submit' ); ?>
 		</form>
-		<?php
-	}
-
-	/**
-	 * Render next steps area.
-	 *
-	 * @return void
-	 */
-	private function render_next_steps() {
-		?>
-		<div class="scai-admin-card">
-			<h2><?php echo esc_html__( 'Next Setup Steps', 'supportcandy-ai' ); ?></h2>
-
-			<ol>
-				<li><?php echo esc_html__( 'Configure AI provider management.', 'supportcandy-ai' ); ?></li>
-				<li><?php echo esc_html__( 'Add provider API credentials securely.', 'supportcandy-ai' ); ?></li>
-				<li><?php echo esc_html__( 'Configure knowledge sources.', 'supportcandy-ai' ); ?></li>
-				<li><?php echo esc_html__( 'Enable ticket sidebar features.', 'supportcandy-ai' ); ?></li>
-			</ol>
-		</div>
 		<?php
 	}
 

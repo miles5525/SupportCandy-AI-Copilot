@@ -90,7 +90,8 @@ final class SCAI_Prompt_Engine {
 				'When ticket attachments exist, always include the Attachments section and list each attachment separately by filename and type.',
 				'For every listed attachment, state whether its content was inspected.',
 				'For an inspected text or log attachment, summarize useful facts supported by its provided excerpt.',
-				'For an uninspected image, PDF, or other attachment, clearly state that its content was not inspected.',
+				'For an image explicitly included in the current AI request, visually inspect it and describe relevant visible details instead of relying on its metadata-only content_inspected value.',
+				'For an uninspected image not included in the current AI request, or an uninspected PDF or other attachment, clearly state that its content was not inspected.',
 				'Do not claim an image was inspected unless the request explicitly indicates that image content was provided to the model.',
 				'Do not place attachment details only under Suggested Next Action; keep the dedicated Attachments section.',
 				'If there are no ticket attachments, the Attachments section may be omitted or say "None mentioned."',
@@ -148,7 +149,7 @@ final class SCAI_Prompt_Engine {
 				'Avoid making unsupported promises.',
 				'Ask for missing information if needed.',
 				'Use relevant facts from inspected text excerpts; do not ask for the same error or tell the agent to review the file unless the excerpt is insufficient.',
-				'Do not claim to have seen or read an attachment unless the context says its content was inspected.',
+				'Do not claim to have seen or read an attachment unless the context says its content was inspected or the image is explicitly included in the current AI request.',
 				'Address the latest unresolved Customer message or request; do not reply to a Support Agent message as though it came from the customer.',
 				'Use Internal Notes only as private guidance and never reveal or quote them in the customer-facing reply.',
 				'If Customer messages show repeated follow-ups or frustration about a delay, acknowledge that politely.',
@@ -205,7 +206,7 @@ final class SCAI_Prompt_Engine {
 			$style_instructions,
 			'Avoid adding unsupported facts.',
 			'Do not add unsupported promises or actions.',
-			'Facts in inspected text excerpts are supported context; do not add other attachment-content claims.',
+			'Facts in inspected text excerpts and visible content from images explicitly included in the current AI request are supported context; do not add other attachment-content claims.',
 			'Use speaker labels to preserve the agent draft intent and distinguish Customer requests from previous Support Agent replies.',
 			'Use Internal Notes only as private guidance; do not add or quote their content directly in the customer-facing reply.',
 			'If essential information is missing, ask for it rather than guessing.',
@@ -384,12 +385,12 @@ final class SCAI_Prompt_Engine {
 				'Refer to such evidence as "the attached log/text file includes" or "the provided excerpt shows".',
 				'Do not tell the agent or customer to review or provide information already present in an inspected excerpt.',
 				'If an inspected excerpt is truncated or insufficient, use only what it shows and note that the full file may contain more details.',
-				'When content_inspected is false, do not claim to have seen, read, analyzed, or understood the attachment content.',
+				'When content_inspected is false and the attachment is not an image explicitly included in the current AI request, do not claim to have seen, read, analyzed, or understood its content.',
 				'For an uninspected attachment, you may mention that it exists and ask for relevant details when needed.',
-				'For screenshots or images, say the file is attached but its image content has not been inspected.',
+				'For screenshots or images not included in the current AI request, say the file is attached but its image content has not been inspected.',
 				'For PDFs or documents, say the file is attached but its document content has not been inspected.',
 				'For logs or text files, use only an inspected excerpt or actual text present in the ticket thread or context.',
-				'Do not say "I can see from your screenshot" unless content_inspected is true.',
+				'Do not say "I can see from your screenshot" unless content_inspected is true or that screenshot is explicitly included in the current AI request.',
 			)
 		);
 
@@ -400,6 +401,59 @@ final class SCAI_Prompt_Engine {
 		 * @param array<string, mixed> $args         Instruction args.
 		 */
 		$instructions = apply_filters( 'scai_prompt_attachment_instructions', $instructions, $args );
+
+		return $this->normalize_multiline_text( $instructions );
+	}
+
+	/**
+	 * Build instructions for images included in the current provider request.
+	 *
+	 * @param array<string, mixed> $args Safe prepared-image metadata.
+	 * @return string
+	 */
+	public function build_image_request_instructions( array $args ) {
+		$count     = isset( $args['included_image_count'] ) ? absint( $args['included_image_count'] ) : ( isset( $args['prepared_image_count'] ) ? absint( $args['prepared_image_count'] ) : 0 );
+		$filenames = isset( $args['included_image_filenames'] ) && is_array( $args['included_image_filenames'] )
+			? array_values( array_filter( array_map( 'sanitize_file_name', $args['included_image_filenames'] ) ) )
+			: ( isset( $args['prepared_image_filenames'] ) && is_array( $args['prepared_image_filenames'] )
+				? array_values( array_filter( array_map( 'sanitize_file_name', $args['prepared_image_filenames'] ) ) )
+				: array() );
+		$included = isset( $args['included_images'] ) && is_array( $args['included_images'] )
+			? $args['included_images']
+			: array();
+
+		if ( empty( $filenames ) && ! empty( $included ) ) {
+			foreach ( $included as $image ) {
+				if ( is_array( $image ) && ! empty( $image['filename'] ) ) {
+					$filenames[] = sanitize_file_name( $image['filename'] );
+				}
+			}
+
+			$filenames = array_values( array_unique( array_filter( $filenames ) ) );
+		}
+
+		if ( 0 === $count || empty( $filenames ) || ( empty( $args['images_attached_to_request'] ) && empty( $args['image_content_provided_to_model'] ) ) ) {
+			return '';
+		}
+
+		$instructions = sprintf(
+			/* translators: %s: comma-separated image filenames. */
+			__( 'The following image attachments are included in this AI request for visual inspection: %s.', 'supportcandy-ai' ),
+			implode( ', ', $filenames )
+		);
+		$instructions .= ' ' . __( 'Inspect their visible content and include relevant observations when useful.', 'supportcandy-ai' );
+		$instructions .= ' ' . __( 'Attachment metadata may say image content was not previously inspected. For the images listed here, you can visually inspect them now; do not say their content was not inspected unless you genuinely cannot access the image.', 'supportcandy-ai' );
+		$instructions .= ' ' . __( 'In a summary Attachments section, mark each included image as "Content inspected: yes, visual inspection included in this AI request" and briefly summarize relevant visible content.', 'supportcandy-ai' );
+		$instructions .= ' ' . __( 'Do not claim visual inspection for an image that is not listed here.', 'supportcandy-ai' );
+		$instructions .= ' ' . __( 'Mention only details you can actually see, do not invent image details, and do not mention data URLs, base64 data, or local paths.', 'supportcandy-ai' );
+
+		/**
+		 * Filter instructions for images attached to the current AI request.
+		 *
+		 * @param string               $instructions Image request instructions.
+		 * @param array<string, mixed> $args         Safe prepared-image metadata.
+		 */
+		$instructions = apply_filters( 'scai_prompt_image_request_instructions', $instructions, $args );
 
 		return $this->normalize_multiline_text( $instructions );
 	}

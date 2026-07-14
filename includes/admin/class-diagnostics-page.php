@@ -106,6 +106,13 @@ final class SCAI_Diagnostics_Page {
 	const ATTACHMENT_DEBUG_SUBMIT_NAME = 'scai_attachment_debug_submit';
 
 	/**
+	 * Image understanding debug submit button name.
+	 *
+	 * @var string
+	 */
+	const IMAGE_DEBUG_SUBMIT_NAME = 'scai_image_understanding_debug_submit';
+
+	/**
 	 * Render diagnostics page.
 	 *
 	 * @return void
@@ -128,13 +135,20 @@ final class SCAI_Diagnostics_Page {
 				$this->render_status( $adapter );
 				$this->render_ticket_form();
 				$this->render_attachment_debug_form();
+				$this->render_image_understanding_debug_form();
 				$this->render_resolver_test_form();
 				$this->render_identifier_debug_form();
 				$this->render_identifier_search_form();
 				$this->render_role_capability_debug_form();
 				$this->render_supportcandy_role_definition_debug();
 
-				if ( $this->is_attachment_debug_requested() ) {
+				if ( $this->is_image_understanding_debug_requested() ) {
+					if ( ! $this->verify_request() ) {
+						$this->render_notice( __( 'Security check failed. Please try again.', 'supportcandy-ai' ), 'error' );
+					} else {
+						$this->render_image_understanding_debug_result( $adapter );
+					}
+				} elseif ( $this->is_attachment_debug_requested() ) {
 					if ( ! $this->verify_request() ) {
 						$this->render_notice( __( 'Security check failed. Please try again.', 'supportcandy-ai' ), 'error' );
 					} else {
@@ -410,6 +424,212 @@ final class SCAI_Diagnostics_Page {
 							<td><code><?php echo esc_html( $row['path_preview'] ); ?></code></td>
 							<td><?php echo esc_html( (string) $row['size'] ); ?></td>
 							<td><?php echo esc_html( $row['created_at'] ); ?></td>
+						</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Render the image understanding diagnostics form.
+	 *
+	 * @return void
+	 */
+	private function render_image_understanding_debug_form() {
+		$ticket_id = $this->get_requested_image_debug_ticket_id();
+
+		if ( 0 === $ticket_id ) {
+			$ticket_id = $this->get_requested_attachment_ticket_id();
+		}
+
+		if ( 0 === $ticket_id ) {
+			$ticket_id = $this->get_requested_ticket_id();
+		}
+		?>
+		<h2><?php echo esc_html__( 'Image Understanding Debug', 'supportcandy-ai' ); ?></h2>
+
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin.php?page=' . self::PAGE_SLUG ) ); ?>" style="margin-top: 12px; max-width: 760px;">
+			<?php wp_nonce_field( self::NONCE_ACTION, self::NONCE_NAME ); ?>
+
+			<table class="form-table" role="presentation">
+				<tbody>
+					<tr>
+						<th scope="row"><label for="scai_image_debug_ticket_id"><?php echo esc_html__( 'Ticket ID', 'supportcandy-ai' ); ?></label></th>
+						<td><input type="number" id="scai_image_debug_ticket_id" name="scai_image_debug_ticket_id" value="<?php echo esc_attr( $ticket_id ); ?>" min="1" step="1" class="small-text" /></td>
+					</tr>
+				</tbody>
+			</table>
+
+			<p><?php echo esc_html__( 'Check image readiness without sending an AI request. Local paths and prepared image data are never displayed.', 'supportcandy-ai' ); ?></p>
+			<?php submit_button( __( 'Inspect Image Understanding', 'supportcandy-ai' ), 'secondary', self::IMAGE_DEBUG_SUBMIT_NAME ); ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * Render image understanding readiness results.
+	 *
+	 * @param SCAI_SupportCandy_Adapter $adapter Adapter instance.
+	 * @return void
+	 */
+	private function render_image_understanding_debug_result( $adapter ) {
+		$ticket_id = $this->get_requested_image_debug_ticket_id();
+
+		if ( 0 === $ticket_id ) {
+			$this->render_notice( __( 'Please enter a valid ticket ID.', 'supportcandy-ai' ), 'warning' );
+			return;
+		}
+
+		if ( ! method_exists( $adapter, 'get_ticket_attachments' ) ) {
+			$this->render_notice( __( 'SupportCandy attachment diagnostics are unavailable.', 'supportcandy-ai' ), 'error' );
+			return;
+		}
+
+		$attachments = $adapter->get_ticket_attachments( $ticket_id );
+		$attachments = is_array( $attachments ) ? $attachments : array();
+		$provider    = $this->get_image_debug_provider_status();
+		$enabled     = class_exists( 'SCAI_Settings' )
+			? (bool) SCAI_Settings::get( 'image_understanding_enabled', false )
+			: (bool) get_option( 'scai_image_understanding_enabled', false );
+		$image_count = 0;
+
+		foreach ( $attachments as $attachment ) {
+			if ( is_array( $attachment ) && $this->is_image_attachment_for_debug( $attachment ) ) {
+				++$image_count;
+			}
+		}
+		?>
+		<h2><?php echo esc_html__( 'Image Understanding Debug Result', 'supportcandy-ai' ); ?></h2>
+		<?php
+		$this->render_key_value_table(
+			array(
+				__( 'Ticket ID', 'supportcandy-ai' )                         => $ticket_id,
+				__( 'scai_image_understanding_enabled', 'supportcandy-ai' ) => $enabled,
+				__( 'Active provider', 'supportcandy-ai' )                   => $provider['label'],
+				__( 'Provider supports images', 'supportcandy-ai' )          => $provider['supports_images'],
+				__( 'Total attachments found', 'supportcandy-ai' )           => count( $attachments ),
+				__( 'Image attachments found', 'supportcandy-ai' )           => $image_count,
+			)
+		);
+
+		if ( ! class_exists( 'SCAI_Image_Attachment_Preparer' ) ) {
+			$this->render_notice( __( 'Image preparer class not loaded.', 'supportcandy-ai' ), 'warning' );
+			return;
+		}
+
+		$diagnostics = $this->build_image_readiness_diagnostics( $attachments );
+		$this->render_key_value_table(
+			array(
+				__( 'Prepared image count', 'supportcandy-ai' ) => $diagnostics['prepared_count'],
+				__( 'Maximum images', 'supportcandy-ai' )       => $diagnostics['max_images'],
+				__( 'Maximum image size', 'supportcandy-ai' )   => size_format( $diagnostics['max_image_size'] ),
+			)
+		);
+		$this->render_image_readiness_table( $diagnostics['rows'] );
+	}
+
+	/**
+	 * Build sanitized image readiness diagnostics.
+	 *
+	 * @param array<int, mixed> $attachments Ticket attachments.
+	 * @return array{rows: array<int, array<string, mixed>>, prepared_count: int, max_images: int, max_image_size: int}
+	 */
+	private function build_image_readiness_diagnostics( array $attachments ) {
+		$preparer       = new SCAI_Image_Attachment_Preparer();
+		$max_images     = max( 1, absint( apply_filters( 'scai_image_attachment_max_images', SCAI_Image_Attachment_Preparer::DEFAULT_MAX_IMAGES, array() ) ) );
+		$max_image_size = max( 1, absint( apply_filters( 'scai_image_attachment_max_file_size', SCAI_Image_Attachment_Preparer::DEFAULT_MAX_IMAGE_SIZE, array() ) ) );
+		$prepared_count = 0;
+		$rows           = array();
+
+		foreach ( $attachments as $attachment ) {
+			if ( ! is_array( $attachment ) || ! $this->is_image_attachment_for_debug( $attachment ) ) {
+				continue;
+			}
+
+			$filename    = isset( $attachment['filename'] ) && is_scalar( $attachment['filename'] ) ? sanitize_file_name( (string) $attachment['filename'] ) : '';
+			$mime_type   = isset( $attachment['mime_type'] ) && is_scalar( $attachment['mime_type'] ) ? sanitize_mime_type( (string) $attachment['mime_type'] ) : '';
+			$extension   = $preparer->get_extension( $filename );
+			$file_size   = isset( $attachment['file_size'] ) ? absint( $attachment['file_size'] ) : ( isset( $attachment['size'] ) ? absint( $attachment['size'] ) : 0 );
+			$path_exists = ! empty( $attachment['local_path_exists'] ) && ! empty( $attachment['local_path'] );
+			$eligible    = $preparer->can_prepare_image( $attachment );
+			$included    = false;
+			$reason      = '';
+
+			if ( ! $eligible ) {
+				$result = $preparer->prepare_image( $attachment );
+				$reason = isset( $result['error_message'] ) && is_scalar( $result['error_message'] ) ? sanitize_text_field( (string) $result['error_message'] ) : __( 'The image is not eligible for preparation.', 'supportcandy-ai' );
+			} elseif ( $prepared_count >= $max_images ) {
+				$reason = __( 'Skipped because the maximum image count was reached.', 'supportcandy-ai' );
+			} else {
+				$result = $preparer->prepare_image( $attachment );
+				$included = ! empty( $result['success'] );
+
+				if ( $included ) {
+					++$prepared_count;
+				} else {
+					$eligible = false;
+					$reason   = isset( $result['error_message'] ) && is_scalar( $result['error_message'] ) ? sanitize_text_field( (string) $result['error_message'] ) : __( 'The image could not be prepared.', 'supportcandy-ai' );
+				}
+			}
+
+			$rows[] = array(
+				'filename'    => $filename,
+				'mime_type'   => $mime_type,
+				'extension'   => $extension,
+				'file_size'   => $file_size,
+				'path_exists' => $path_exists,
+				'eligible'    => $eligible,
+				'included'    => $included,
+				'reason'      => $reason,
+			);
+		}
+
+		return array(
+			'rows'            => $rows,
+			'prepared_count'  => $prepared_count,
+			'max_images'      => $max_images,
+			'max_image_size'  => $max_image_size,
+		);
+	}
+
+	/**
+	 * Render sanitized image readiness rows.
+	 *
+	 * @param array<int, array<string, mixed>> $rows Image rows.
+	 * @return void
+	 */
+	private function render_image_readiness_table( array $rows ) {
+		?>
+		<h3><?php echo esc_html__( 'Image Attachment Readiness', 'supportcandy-ai' ); ?></h3>
+		<?php if ( empty( $rows ) ) : ?>
+			<p><?php echo esc_html__( 'No image attachments were found for this ticket.', 'supportcandy-ai' ); ?></p>
+			<?php return; ?>
+		<?php endif; ?>
+		<div style="max-width: 1120px; overflow-x: auto;">
+			<table class="widefat striped">
+				<thead><tr>
+					<th><?php echo esc_html__( 'Filename', 'supportcandy-ai' ); ?></th>
+					<th><?php echo esc_html__( 'MIME type', 'supportcandy-ai' ); ?></th>
+					<th><?php echo esc_html__( 'Extension', 'supportcandy-ai' ); ?></th>
+					<th><?php echo esc_html__( 'File size', 'supportcandy-ai' ); ?></th>
+					<th><?php echo esc_html__( 'Local path exists', 'supportcandy-ai' ); ?></th>
+					<th><?php echo esc_html__( 'Eligible for image AI', 'supportcandy-ai' ); ?></th>
+					<th><?php echo esc_html__( 'Would be included in AI request', 'supportcandy-ai' ); ?></th>
+					<th><?php echo esc_html__( 'Skipped reason', 'supportcandy-ai' ); ?></th>
+				</tr></thead>
+				<tbody>
+					<?php foreach ( $rows as $row ) : ?>
+						<tr>
+							<td><?php echo esc_html( (string) $row['filename'] ); ?></td>
+							<td><?php echo esc_html( (string) $row['mime_type'] ); ?></td>
+							<td><?php echo esc_html( (string) $row['extension'] ); ?></td>
+							<td><?php echo esc_html( size_format( absint( $row['file_size'] ) ) ); ?></td>
+							<td><?php echo esc_html( $this->format_bool( ! empty( $row['path_exists'] ) ) ); ?></td>
+							<td><?php echo esc_html( $this->format_bool( ! empty( $row['eligible'] ) ) ); ?></td>
+							<td><?php echo esc_html( $this->format_bool( ! empty( $row['included'] ) ) ); ?></td>
+							<td><?php echo esc_html( (string) $row['reason'] ); ?></td>
 						</tr>
 					<?php endforeach; ?>
 				</tbody>
@@ -849,6 +1069,19 @@ final class SCAI_Diagnostics_Page {
 	}
 
 	/**
+	 * Get requested ticket ID for image understanding diagnostics.
+	 *
+	 * @return int
+	 */
+	private function get_requested_image_debug_ticket_id() {
+		if ( ! isset( $_POST['scai_image_debug_ticket_id'] ) || ! is_scalar( $_POST['scai_image_debug_ticket_id'] ) ) {
+			return 0;
+		}
+
+		return absint( wp_unslash( $_POST['scai_image_debug_ticket_id'] ) );
+	}
+
+	/**
 	 * Get requested ticket identifier.
 	 *
 	 * @return string
@@ -905,6 +1138,15 @@ final class SCAI_Diagnostics_Page {
 	 */
 	private function is_attachment_debug_requested() {
 		return isset( $_POST[ self::ATTACHMENT_DEBUG_SUBMIT_NAME ] );
+	}
+
+	/**
+	 * Determine whether image understanding debugging was requested.
+	 *
+	 * @return bool
+	 */
+	private function is_image_understanding_debug_requested() {
+		return isset( $_POST[ self::IMAGE_DEBUG_SUBMIT_NAME ] );
 	}
 
 	/**
@@ -1097,6 +1339,62 @@ final class SCAI_Diagnostics_Page {
 		$json    = wp_json_encode( $context, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
 
 		return is_string( $json ) ? $json : '{}';
+	}
+
+	/**
+	 * Get safe active-provider image capability diagnostics.
+	 *
+	 * @return array{label: string, supports_images: string}
+	 */
+	private function get_image_debug_provider_status() {
+		$status = array(
+			'label'           => __( 'Not available', 'supportcandy-ai' ),
+			'supports_images' => __( 'Unknown', 'supportcandy-ai' ),
+		);
+
+		if ( ! class_exists( 'SCAI_Provider_Manager' ) ) {
+			return $status;
+		}
+
+		$manager      = new SCAI_Provider_Manager();
+		$provider_key = sanitize_key( $manager->get_active_provider_key() );
+		$provider     = $manager->get_active_provider();
+
+		if ( '' !== $provider_key ) {
+			$status['label'] = $provider_key;
+		}
+
+		if ( ! $provider ) {
+			return $status;
+		}
+
+		if ( method_exists( $provider, 'get_name' ) ) {
+			$name = sanitize_text_field( $provider->get_name() );
+
+			if ( '' !== $name ) {
+				$status['label'] = '' !== $provider_key ? sprintf( '%1$s (%2$s)', $name, $provider_key ) : $name;
+			}
+		}
+
+		if ( method_exists( $provider, 'supports_images' ) ) {
+			$status['supports_images'] = $this->format_bool( (bool) $provider->supports_images() );
+		}
+
+		return $status;
+	}
+
+	/**
+	 * Determine whether attachment metadata describes an image.
+	 *
+	 * @param array<string, mixed> $attachment Attachment metadata.
+	 * @return bool
+	 */
+	private function is_image_attachment_for_debug( array $attachment ) {
+		$filename  = isset( $attachment['filename'] ) && is_scalar( $attachment['filename'] ) ? sanitize_file_name( (string) $attachment['filename'] ) : '';
+		$mime_type = isset( $attachment['mime_type'] ) && is_scalar( $attachment['mime_type'] ) ? sanitize_mime_type( (string) $attachment['mime_type'] ) : '';
+		$extension = sanitize_key( strtolower( (string) pathinfo( $filename, PATHINFO_EXTENSION ) ) );
+
+		return 0 === strpos( $mime_type, 'image/' ) || in_array( $extension, array( 'jpg', 'jpeg', 'png', 'webp', 'gif', 'svg', 'heic', 'tif', 'tiff', 'bmp' ), true );
 	}
 
 	/**
