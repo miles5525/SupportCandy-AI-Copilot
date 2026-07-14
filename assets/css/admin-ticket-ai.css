@@ -73,8 +73,27 @@
 #scai-ticket-ai-panel .scai-result-actions {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 8px;
+	gap: 8px 10px;
 	margin: 12px 0;
+}
+
+#scai-ticket-ai-panel .scai-generate-summary,
+#scai-ticket-ai-panel .scai-generate-reply {
+	min-height: 34px;
+	padding: 6px 16px;
+	border-radius: 4px;
+	font-size: 13px;
+	line-height: 1.4;
+}
+
+#scai-ticket-ai-panel .scai-improve-draft,
+#scai-ticket-ai-panel .scai-copy-result,
+#scai-ticket-ai-panel .scai-insert-result {
+	min-height: 32px;
+	padding: 5px 14px;
+	border-radius: 4px;
+	font-size: 13px;
+	line-height: 1.4;
 }
 
 #scai-ticket-ai-panel button {
@@ -178,6 +197,114 @@
 	font-size: 13px;
 }
 
+#scai-ticket-ai-panel .scai-conversation-history {
+	margin-top: 16px;
+	padding-top: 12px;
+	border-top: 1px solid #dcdcde;
+}
+
+#scai-ticket-ai-panel .scai-conversation-history-title {
+	margin: 0 0 8px;
+	color: #1d2327;
+	font-size: 15px;
+	font-weight: 600;
+	line-height: 1.4;
+}
+
+#scai-ticket-ai-panel .scai-conversation-history-content {
+	color: #50575e;
+	font-size: 13px;
+}
+
+#scai-ticket-ai-panel .scai-conversation-history-item {
+	border: 1px solid #dcdcde;
+	border-radius: 5px;
+	background: #fff;
+	box-shadow: 0 1px 1px rgba(0, 0, 0, 0.02);
+}
+
+#scai-ticket-ai-panel .scai-conversation-history-item > strong {
+	display: block;
+	color: #1d2327;
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 1.4;
+}
+
+#scai-ticket-ai-panel .scai-conversation-history-meta {
+	margin: 3px 0 5px;
+	color: #646970;
+	font-size: 11px;
+	line-height: 1.4;
+	word-break: break-word;
+}
+
+#scai-ticket-ai-panel .scai-conversation-history-preview {
+	margin: 5px 0 7px;
+	color: #50575e;
+	line-height: 1.45;
+	overflow-wrap: anywhere;
+}
+
+#scai-ticket-ai-panel .scai-conversation-history-text {
+	width: 100%;
+	max-height: 220px !important;
+	margin: 8px 0;
+	padding: 10px;
+	overflow: auto;
+	border: 1px solid #dcdcde;
+	border-radius: 4px;
+	background: #f6f7f7;
+	color: #1d2327;
+	font-family: Consolas, Monaco, monospace;
+	font-size: 12px;
+	line-height: 1.5;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+#scai-ticket-ai-panel .scai-conversation-history-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px 8px;
+	margin-top: 6px;
+}
+
+#scai-ticket-ai-panel .scai-conversation-history-actions .scai-copy-history-item,
+#scai-ticket-ai-panel .scai-conversation-history-actions .scai-insert-history-item,
+#scai-ticket-ai-panel .scai-conversation-history-actions .scai-view-history-item,
+#scai-ticket-ai-panel .scai-toggle-more-history {
+	min-height: 30px;
+	padding: 5px 12px;
+	border-color: #8c8f94;
+	border-radius: 4px;
+	background: #f6f7f7;
+	color: #1d2327;
+	font-size: 13px;
+	font-weight: 500;
+	line-height: 1.4;
+}
+
+#scai-ticket-ai-panel .scai-conversation-history-actions .scai-copy-history-item:hover,
+#scai-ticket-ai-panel .scai-conversation-history-actions .scai-copy-history-item:focus,
+#scai-ticket-ai-panel .scai-conversation-history-actions .scai-insert-history-item:hover,
+#scai-ticket-ai-panel .scai-conversation-history-actions .scai-insert-history-item:focus,
+#scai-ticket-ai-panel .scai-conversation-history-actions .scai-view-history-item:hover,
+#scai-ticket-ai-panel .scai-conversation-history-actions .scai-view-history-item:focus,
+#scai-ticket-ai-panel .scai-toggle-more-history:hover,
+#scai-ticket-ai-panel .scai-toggle-more-history:focus {
+	border-color: #2271b1;
+	background: #fff;
+	color: #135e96;
+}
+
+#scai-ticket-ai-panel .scai-toggle-more-history {
+	padding-right: 14px;
+	padding-left: 14px;
+	margin-top: 4px;
+}
+
 @media (max-width: 600px) {
 	#scai-ticket-ai-panel {
 		max-width: none;
@@ -193,5 +320,16 @@
 	#scai-ticket-ai-panel button,
 	#scai-ticket-ai-panel .scai-manual-ticket-id {
 		width: 100%;
+	}
+
+	#scai-ticket-ai-panel .scai-conversation-history-actions {
+		display: flex;
+	}
+
+	#scai-ticket-ai-panel .scai-conversation-history-actions .scai-copy-history-item,
+	#scai-ticket-ai-panel .scai-conversation-history-actions .scai-insert-history-item,
+	#scai-ticket-ai-panel .scai-conversation-history-actions .scai-view-history-item {
+		flex: 1 1 auto;
+		width: auto;
 	}
 }

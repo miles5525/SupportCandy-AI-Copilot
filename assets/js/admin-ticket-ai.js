@@ -7,6 +7,12 @@
 	var mutationObserver = null;
 	var historyPatched = false;
 	var initialized = false;
+	var historyLoadedTicketId = 0;
+	var historyRequestTicketId = 0;
+	var historyRequestPromise = null;
+	var historyRequestSequence = 0;
+	var latestHistoryItems = [];
+	var showAllHistory = false;
 
 	function getConfig() {
 		var config = window.scaiTicketAI || {};
@@ -482,6 +488,9 @@
 		var copyButton;
 		var insertButton;
 		var message;
+		var historySection;
+		var historyTitle;
+		var historyContent;
 		var mountPoint;
 
 		if ( existing ) {
@@ -571,6 +580,22 @@
 		message.className = 'scai-ticket-ai-message';
 		message.setAttribute( 'aria-live', 'polite' );
 
+		historySection = document.createElement( 'section' );
+		historySection.className = 'scai-conversation-history';
+		historySection.style.marginTop = '20px';
+
+		historyTitle = document.createElement( 'h3' );
+		historyTitle.className = 'scai-conversation-history-title';
+		historyTitle.textContent = 'Previous AI History';
+
+		historyContent = document.createElement( 'div' );
+		historyContent.className = 'scai-conversation-history-content';
+		historyContent.setAttribute( 'aria-live', 'polite' );
+		historyContent.textContent = ticketId && confidence === 'high' ? 'Loading AI history...' : 'Enter a valid internal ticket ID to load AI history.';
+
+		historySection.appendChild( historyTitle );
+		historySection.appendChild( historyContent );
+
 		panel.appendChild( title );
 		panel.appendChild( status );
 		panel.appendChild( manualWrap );
@@ -581,6 +606,7 @@
 		panel.appendChild( output );
 		panel.appendChild( resultActions );
 		panel.appendChild( message );
+		panel.appendChild( historySection );
 
 		mountPoint = findMountPoint();
 
@@ -688,6 +714,12 @@
 		output = panel.querySelector( '.scai-ticket-ai-output' );
 
 		panel.setAttribute( 'data-scai-events-bound', '1' );
+
+		panel.addEventListener( 'change', function ( event ) {
+			if ( event.target && event.target.classList && event.target.classList.contains( 'scai-manual-ticket-id' ) ) {
+				refreshConversationHistory( true );
+			}
+		} );
 
 		if ( summaryButton ) {
 			summaryButton.addEventListener( 'click', function () {
@@ -806,6 +838,7 @@
 				if ( response && response.success && response.data ) {
 					showResult( output, response.data );
 					setLoading( button, output, false );
+					refreshConversationHistory( true );
 					return;
 				}
 
@@ -1230,6 +1263,260 @@
 		return getString( 'error', 'Something went wrong.' );
 	}
 
+	function loadConversationHistory( ticketId, force ) {
+		var config = getConfig();
+		var panel = document.getElementById( panelId );
+		var sequence;
+		var request;
+
+		ticketId = parseTicketId( ticketId );
+
+		if ( ! panel ) {
+			return Promise.resolve();
+		}
+
+		if ( ! ticketId ) {
+			historyLoadedTicketId = 0;
+			historyRequestTicketId = 0;
+			renderConversationHistoryMessage( 'Enter a valid internal ticket ID to load AI history.' );
+			return Promise.resolve();
+		}
+
+		if ( ! force && historyLoadedTicketId === ticketId ) {
+			return Promise.resolve();
+		}
+
+		if ( ! force && historyRequestPromise && historyRequestTicketId === ticketId ) {
+			return historyRequestPromise;
+		}
+
+		if ( ! config.ajaxUrl || ! config.nonce ) {
+			renderConversationHistoryMessage( 'Could not load AI history.' );
+			return Promise.resolve();
+		}
+
+		historyRequestSequence += 1;
+		sequence = historyRequestSequence;
+		historyRequestTicketId = ticketId;
+		renderConversationHistoryMessage( 'Loading AI history...' );
+
+		request = postAjax( config.ajaxUrl, {
+			action: 'scai_get_ticket_conversation_history',
+			nonce: config.nonce,
+			ticket_id: ticketId,
+			limit: 10
+		} ).then( function ( response ) {
+			if ( sequence !== historyRequestSequence || resolveTicketId( panel ) !== ticketId ) {
+				return;
+			}
+
+			if ( response && response.success && response.data && Array.isArray( response.data.items ) ) {
+				historyLoadedTicketId = ticketId;
+				renderConversationHistory( response.data.items );
+				return;
+			}
+
+			if ( response && response.data && response.data.code === 'permission_denied' ) {
+				historyLoadedTicketId = ticketId;
+				renderConversationHistoryMessage( 'AI history is not available for this ticket.' );
+				return;
+			}
+
+			renderConversationHistoryMessage( 'Could not load AI history.' );
+		}, function () {
+			if ( sequence === historyRequestSequence ) {
+				renderConversationHistoryMessage( 'Could not load AI history.' );
+			}
+		} )[ 'catch' ]( function () {
+			if ( sequence === historyRequestSequence ) {
+				renderConversationHistoryMessage( 'Could not load AI history.' );
+			}
+		} );
+
+		historyRequestPromise = request.then( function () {
+			if ( sequence === historyRequestSequence ) {
+				historyRequestPromise = null;
+				historyRequestTicketId = 0;
+			}
+		} );
+
+		return historyRequestPromise;
+	}
+
+	function renderConversationHistory( items ) {
+		latestHistoryItems = Array.isArray( items ) ? items.slice( 0, 10 ) : [];
+		showAllHistory = false;
+		renderConversationHistoryItems();
+	}
+
+	function renderConversationHistoryItems() {
+		var panel = document.getElementById( panelId );
+		var container = panel ? panel.querySelector( '.scai-conversation-history-content' ) : null;
+		var visibleItems;
+		var showMoreButton;
+		var index;
+
+		if ( ! container ) {
+			return;
+		}
+
+		container.textContent = '';
+
+		if ( ! latestHistoryItems.length ) {
+			renderConversationHistoryEmpty();
+			return;
+		}
+
+		visibleItems = showAllHistory ? latestHistoryItems : latestHistoryItems.slice( 0, 3 );
+
+		for ( index = 0; index < visibleItems.length; index++ ) {
+			container.appendChild( createCompactHistoryItem( visibleItems[ index ] ) );
+		}
+
+		if ( latestHistoryItems.length > 3 ) {
+			showMoreButton = createButton(
+				'scai-toggle-more-history',
+				showAllHistory ? 'Show less history' : 'Show more history'
+			);
+			showMoreButton.addEventListener( 'click', toggleShowMoreHistory );
+			container.appendChild( showMoreButton );
+		}
+	}
+
+	function renderConversationHistoryEmpty() {
+		renderConversationHistoryMessage( 'No previous AI history for this ticket yet.' );
+	}
+
+	function renderConversationHistoryMessage( message ) {
+		var panel = document.getElementById( panelId );
+		var container = panel ? panel.querySelector( '.scai-conversation-history-content' ) : null;
+
+		if ( container ) {
+			container.textContent = message;
+		}
+	}
+
+	function truncateText( text, maxLength ) {
+		text = String( text || '' ).replace( /\s+/g, ' ' ).trim();
+		maxLength = parseInt( maxLength, 10 );
+
+		if ( ! maxLength || text.length <= maxLength ) {
+			return text;
+		}
+
+		return text.substring( 0, maxLength ).trim() + '…';
+	}
+
+	function createCompactHistoryItem( item ) {
+		var wrapper = document.createElement( 'article' );
+		var heading = document.createElement( 'strong' );
+		var meta = document.createElement( 'p' );
+		var preview = document.createElement( 'p' );
+		var fullContent = document.createElement( 'pre' );
+		var actions = document.createElement( 'div' );
+		var copyButton = createButton( 'scai-copy-history-item', 'Copy' );
+		var insertButton = createButton( 'scai-insert-history-item', 'Insert' );
+		var viewButton = createButton( 'scai-view-history-item', 'View full' );
+		var content = item && typeof item.content === 'string' ? item.content : '';
+		var metaParts = [];
+
+		wrapper.className = 'scai-conversation-history-item';
+		wrapper.style.margin = '8px 0';
+		wrapper.style.padding = '8px';
+		wrapper.style.border = '1px solid #dcdcde';
+
+		heading.textContent = item && typeof item.feature_label === 'string' && item.feature_label ? item.feature_label : 'AI Result';
+
+		if ( item && item.created_at ) {
+			metaParts.push( String( item.created_at ) );
+		}
+
+		if ( item && item.provider ) {
+			metaParts.push( String( item.provider ) );
+		}
+
+		if ( item && item.model ) {
+			metaParts.push( String( item.model ) );
+		}
+
+		meta.className = 'scai-conversation-history-meta';
+		meta.style.margin = '4px 0';
+		meta.textContent = metaParts.join( ' · ' );
+
+		preview.className = 'scai-conversation-history-preview';
+		preview.style.margin = '6px 0';
+		preview.textContent = truncateText( content, 180 );
+
+		fullContent.className = 'scai-conversation-history-text';
+		fullContent.style.display = 'none';
+		fullContent.style.whiteSpace = 'pre-wrap';
+		fullContent.style.maxHeight = '320px';
+		fullContent.style.overflow = 'auto';
+		fullContent.textContent = content;
+
+		actions.className = 'scai-conversation-history-actions';
+		actions.appendChild( copyButton );
+		actions.appendChild( insertButton );
+		actions.appendChild( viewButton );
+
+		copyButton.addEventListener( 'click', function () {
+			copyToClipboard( content ).then( function () {
+				showPanelMessage( 'AI history item copied to clipboard.', 'success' );
+			}, function () {
+				showPanelMessage( 'Unable to copy history item. Please copy it manually.', 'error' );
+			} );
+		} );
+
+		insertButton.addEventListener( 'click', function () {
+			if ( insertIntoReplyEditor( content ) ) {
+				showPanelMessage( 'AI history item inserted into the reply editor. Review before submitting.', 'success' );
+				return;
+			}
+
+			showPanelMessage( 'Reply editor not found. Please copy the history item manually.', 'error' );
+		} );
+
+		viewButton.addEventListener( 'click', function () {
+			toggleHistoryItemFullView( viewButton, fullContent );
+		} );
+
+		wrapper.appendChild( heading );
+		wrapper.appendChild( meta );
+		wrapper.appendChild( preview );
+		wrapper.appendChild( fullContent );
+		wrapper.appendChild( actions );
+
+		return wrapper;
+	}
+
+	function toggleHistoryItemFullView( button, itemContentElement ) {
+		var isExpanded;
+
+		if ( ! button || ! itemContentElement ) {
+			return;
+		}
+
+		isExpanded = itemContentElement.style.display !== 'none';
+		itemContentElement.style.display = isExpanded ? 'none' : '';
+		button.textContent = isExpanded ? 'View full' : 'Hide full';
+		button.setAttribute( 'aria-expanded', isExpanded ? 'false' : 'true' );
+	}
+
+	function toggleShowMoreHistory() {
+		showAllHistory = ! showAllHistory;
+		renderConversationHistoryItems();
+	}
+
+	function refreshConversationHistory( force ) {
+		var panel = document.getElementById( panelId );
+
+		if ( ! panel ) {
+			return Promise.resolve();
+		}
+
+		return loadConversationHistory( resolveTicketId( panel ), !! force );
+	}
+
 	function refreshTicketAIPanel() {
 		var viewState = getTicketViewState();
 		var detection = viewState.detection || detectTicketIdWithConfidence();
@@ -1252,6 +1539,7 @@
 		}
 
 		bindEvents( panel );
+		refreshConversationHistory( false );
 
 		if ( ! getConfig().ajaxUrl || ! getConfig().nonce ) {
 			output = panel.querySelector( '.scai-ticket-ai-output' );
@@ -1270,6 +1558,12 @@
 		}
 
 		latestResultText = '';
+		historyLoadedTicketId = 0;
+		historyRequestTicketId = 0;
+		historyRequestPromise = null;
+		historyRequestSequence += 1;
+		latestHistoryItems = [];
+		showAllHistory = false;
 	}
 
 	function scheduleRefresh() {
