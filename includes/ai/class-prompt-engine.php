@@ -249,6 +249,99 @@ final class SCAI_Prompt_Engine {
 	}
 
 	/**
+	 * Build a request that merges an agent draft with an AI suggestion.
+	 *
+	 * @param string               $current_draft Current agent draft.
+	 * @param string               $ai_suggestion Generated AI suggestion.
+	 * @param string               $context_text  Optional readable ticket context.
+	 * @param array<string, mixed> $context       Compact context.
+	 * @param array<string, mixed> $args          Request args.
+	 * @return array<string, mixed>
+	 */
+	public function build_reply_merge_request( $current_draft, $ai_suggestion, $context_text = '', array $context = array(), array $args = array() ) {
+		$current_draft      = $this->normalize_multiline_text( $current_draft );
+		$ai_suggestion      = $this->normalize_multiline_text( $ai_suggestion );
+		$context_text       = $this->normalize_multiline_text( $context_text );
+		$style_instructions = $this->build_response_style_instructions( $args );
+
+		if ( '' === $current_draft || '' === $ai_suggestion ) {
+			return array();
+		}
+
+		$prompt_parts = array(
+			'Current Agent Draft is the base reply. AI Suggestion is supporting material only.',
+			'',
+			'Response style:',
+			$style_instructions,
+			'',
+			'Current Agent Draft:',
+			'<<<CURRENT_DRAFT',
+			$current_draft,
+			'CURRENT_DRAFT',
+			'',
+			'AI Suggestion:',
+			'<<<AI_SUGGESTION',
+			$ai_suggestion,
+			'AI_SUGGESTION',
+			'',
+			'Ticket Context:',
+			'<<<TICKET_CONTEXT',
+			'' !== $context_text ? $context_text : '(No additional ticket context provided.)',
+			'TICKET_CONTEXT',
+			'',
+			'Task:',
+			'Create one final polished customer-facing reply by merging the Current Agent Draft with the AI Suggestion.',
+			'',
+			'Mandatory rules:',
+			'1. Use the Current Agent Draft as the base of the final reply.',
+			'2. Preserve the meaning of every sentence in the Current Agent Draft unless it is factually unsafe.',
+			'3. If the Current Agent Draft contains an apology, delay acknowledgement, promise, next action, or specific wording, keep that intent in the final reply.',
+			'4. Use the AI Suggestion only to add useful, accurate details.',
+			'5. Do not ignore the Current Agent Draft.',
+			'6. Do not return the AI Suggestion alone.',
+			'7. Do not simply append both texts.',
+			'8. Remove duplication.',
+			'9. Keep the reply customer-facing.',
+			'10. Do not reveal Internal Notes.',
+			'11. Do not add unsupported claims or promises.',
+			'12. Do not add placeholders or signatures such as [Your Name] or Support Team unless they are present in the Current Agent Draft.',
+			'13. If the Current Agent Draft says "Hi, sorry for the delay. We are checking this issue.", the final reply must retain that delay acknowledgement and checking action in natural wording.',
+			'',
+			'Silent self-check before finalizing:',
+			'- Ensure the final reply contains the key intent from the Current Agent Draft.',
+			'- Ensure the final reply contains useful, non-duplicative details from the AI Suggestion.',
+			'Return only the final merged reply.',
+		);
+
+		$request_args = $this->build_request_args(
+			'reply_merge',
+			implode( "\n", $prompt_parts ),
+			$context,
+			wp_parse_args(
+				$args,
+				array(
+					'temperature' => 0.3,
+					'max_tokens'  => 800,
+				)
+			)
+		);
+
+		/**
+		 * Filter the dedicated reply-merge request.
+		 *
+		 * @param array<string, mixed> $request_args  Merge request arguments.
+		 * @param string               $current_draft Sanitized current draft.
+		 * @param string               $ai_suggestion Sanitized AI suggestion.
+		 * @param string               $context_text  Sanitized readable context.
+		 * @param array<string, mixed> $context       Compact context.
+		 * @param array<string, mixed> $args          Source args.
+		 */
+		$request_args = apply_filters( 'scai_prompt_reply_merge_request', $request_args, $current_draft, $ai_suggestion, $context_text, $context, $args );
+
+		return is_array( $request_args ) ? $this->sanitize_request_args( $request_args ) : array();
+	}
+
+	/**
 	 * Build concise instructions for interpreting conversation speaker labels.
 	 *
 	 * @param array<string, mixed> $args Instruction args.
@@ -609,9 +702,12 @@ final class SCAI_Prompt_Engine {
 	 * @return string
 	 */
 	private function normalize_multiline_text( $text ) {
-		$text  = html_entity_decode( (string) $text, ENT_QUOTES | ENT_HTML5, get_bloginfo( 'charset' ) );
-		$text  = wp_strip_all_tags( $text );
-		$lines = preg_split( '/\R/u', $text );
+		$delimiter_token = '__SCAI_PROMPT_TRIPLE_LESS_THAN__';
+		$text            = html_entity_decode( (string) $text, ENT_QUOTES | ENT_HTML5, get_bloginfo( 'charset' ) );
+		$text            = str_replace( '<<<', $delimiter_token, $text );
+		$text            = wp_strip_all_tags( $text );
+		$text            = str_replace( $delimiter_token, '<<<', $text );
+		$lines           = preg_split( '/\R/u', $text );
 
 		if ( ! is_array( $lines ) ) {
 			return '';
@@ -624,6 +720,7 @@ final class SCAI_Prompt_Engine {
 
 		$text = implode( "\n", $lines );
 		$text = preg_replace( "/\n{3,}/", "\n\n", $text );
+		$text = str_replace( '&lt;&lt;&lt;', '<<<', $text );
 
 		return is_string( $text ) ? trim( $text ) : '';
 	}

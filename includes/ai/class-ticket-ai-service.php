@@ -222,6 +222,81 @@ final class SCAI_Ticket_AI_Service {
 	}
 
 	/**
+	 * Merge an agent draft with an AI suggestion for a ticket.
+	 *
+	 * @param int                  $ticket_id     Ticket ID.
+	 * @param string               $current_draft Current agent draft.
+	 * @param string               $ai_suggestion Generated AI suggestion.
+	 * @param array<string, mixed> $args          Request args.
+	 * @return SCAI_AI_Response
+	 */
+	public function merge_reply( $ticket_id, $current_draft, $ai_suggestion, array $args = array() ) {
+		$ticket_id     = absint( $ticket_id );
+		$current_draft = $this->sanitize_text( $current_draft );
+		$ai_suggestion = $this->sanitize_text( $ai_suggestion );
+
+		if ( 0 === $ticket_id ) {
+			return $this->build_error_response( 'invalid_ticket_id', __( 'Invalid ticket ID.', 'supportcandy-ai' ) );
+		}
+
+		if ( '' === $current_draft ) {
+			return $this->build_error_response(
+				'empty_current_draft',
+				__( 'Type a draft in the reply editor before using Merge with my draft.', 'supportcandy-ai' ),
+				array(
+					'ticket_id' => $ticket_id,
+					'feature'   => 'reply_merge',
+				)
+			);
+		}
+
+		if ( '' === $ai_suggestion ) {
+			return $this->build_error_response(
+				'empty_ai_suggestion',
+				__( 'Generate an AI suggestion before using Merge with my draft.', 'supportcandy-ai' ),
+				array(
+					'ticket_id' => $ticket_id,
+					'feature'   => 'reply_merge',
+				)
+			);
+		}
+
+		$package = $this->build_ticket_context_package( $ticket_id, $args );
+
+		if ( $package instanceof SCAI_AI_Response ) {
+			return $package;
+		}
+
+		$package['response_options']  = $this->normalize_response_options( $args );
+		$package['workflow_metadata'] = array(
+			'current_draft_length'  => $this->get_text_length( $current_draft ),
+			'ai_suggestion_length' => $this->get_text_length( $ai_suggestion ),
+			'tone'                 => $package['response_options']['tone'],
+			'length'               => $package['response_options']['length'],
+			'format'               => $package['response_options']['format'],
+		);
+
+		$prompt_engine = $this->get_prompt_engine();
+
+		if ( ! $prompt_engine || ! method_exists( $prompt_engine, 'build_reply_merge_request' ) ) {
+			return $this->build_error_response( 'prompt_engine_unavailable', __( 'Prompt engine is unavailable.', 'supportcandy-ai' ), $this->build_metadata( $ticket_id, 'reply_merge', $package ) );
+		}
+
+		return $this->send_request(
+			$prompt_engine->build_reply_merge_request(
+				$current_draft,
+				$ai_suggestion,
+				$package['context_text'],
+				$package['context'],
+				$this->with_ticket_metadata( $args, $ticket_id, 'reply_merge', $package )
+			),
+			$ticket_id,
+			'reply_merge',
+			$package
+		);
+	}
+
+	/**
 	 * Get context engine instance.
 	 *
 	 * @return SCAI_Context_Engine|null
@@ -624,7 +699,8 @@ final class SCAI_Ticket_AI_Service {
 		$response_options = isset( $context['response_options'] ) && is_array( $context['response_options'] )
 			? $this->normalize_response_options( $context['response_options'] )
 			: $this->normalize_response_options( array() );
-		$image_metadata   = isset( $context['image_metadata'] ) && is_array( $context['image_metadata'] ) ? $this->sanitize_metadata( $context['image_metadata'] ) : array();
+		$image_metadata    = isset( $context['image_metadata'] ) && is_array( $context['image_metadata'] ) ? $this->sanitize_metadata( $context['image_metadata'] ) : array();
+		$workflow_metadata = isset( $context['workflow_metadata'] ) && is_array( $context['workflow_metadata'] ) ? $this->sanitize_metadata( $context['workflow_metadata'] ) : array();
 		$conversation_args = array(
 			'provider'          => $response->get_provider(),
 			'model'             => $response->get_model(),
@@ -632,19 +708,22 @@ final class SCAI_Ticket_AI_Service {
 			'prompt_tokens'     => $response->get_prompt_tokens(),
 			'completion_tokens' => $response->get_completion_tokens(),
 			'context_hash'      => $context_hash,
-			'metadata'          => array(
-				'request_id'       => $response->get_request_id(),
-				'duration_ms'      => $response->get_duration_ms(),
-				'finish_reason'    => $response->get_finish_reason(),
-				'thread_count'     => isset( $stats['thread_count'] ) ? absint( $stats['thread_count'] ) : 0,
-				'attachment_count' => isset( $stats['attachment_count'] ) ? absint( $stats['attachment_count'] ) : 0,
-				'text_attachment_excerpt_count' => isset( $image_metadata['text_attachment_excerpt_count'] ) ? absint( $image_metadata['text_attachment_excerpt_count'] ) : 0,
-				'image_attachment_count'        => isset( $image_metadata['image_attachment_count'] ) ? absint( $image_metadata['image_attachment_count'] ) : 0,
-				'tone'                     => $response_options['tone'],
-				'length'                   => $response_options['length'],
-				'format'                   => $response_options['format'],
-				'prepared_image_count'     => isset( $image_metadata['prepared_image_count'] ) ? absint( $image_metadata['prepared_image_count'] ) : 0,
-				'prepared_image_filenames' => isset( $image_metadata['prepared_image_filenames'] ) && is_array( $image_metadata['prepared_image_filenames'] ) ? $image_metadata['prepared_image_filenames'] : array(),
+			'metadata'          => array_merge(
+				array(
+					'request_id'                    => $response->get_request_id(),
+					'duration_ms'                   => $response->get_duration_ms(),
+					'finish_reason'                 => $response->get_finish_reason(),
+					'thread_count'                  => isset( $stats['thread_count'] ) ? absint( $stats['thread_count'] ) : 0,
+					'attachment_count'              => isset( $stats['attachment_count'] ) ? absint( $stats['attachment_count'] ) : 0,
+					'text_attachment_excerpt_count' => isset( $image_metadata['text_attachment_excerpt_count'] ) ? absint( $image_metadata['text_attachment_excerpt_count'] ) : 0,
+					'image_attachment_count'        => isset( $image_metadata['image_attachment_count'] ) ? absint( $image_metadata['image_attachment_count'] ) : 0,
+					'tone'                          => $response_options['tone'],
+					'length'                        => $response_options['length'],
+					'format'                        => $response_options['format'],
+					'prepared_image_count'          => isset( $image_metadata['prepared_image_count'] ) ? absint( $image_metadata['prepared_image_count'] ) : 0,
+					'prepared_image_filenames'      => isset( $image_metadata['prepared_image_filenames'] ) && is_array( $image_metadata['prepared_image_filenames'] ) ? $image_metadata['prepared_image_filenames'] : array(),
+				),
+				$workflow_metadata
 			),
 		);
 
@@ -761,7 +840,8 @@ final class SCAI_Ticket_AI_Service {
 	private function build_metadata( $ticket_id, $feature, array $package = array() ) {
 		$context          = isset( $package['context'] ) && is_array( $package['context'] ) ? $package['context'] : array();
 		$stats            = isset( $context['stats'] ) && is_array( $context['stats'] ) ? $context['stats'] : array();
-		$image_metadata   = isset( $package['image_metadata'] ) && is_array( $package['image_metadata'] ) ? $this->sanitize_metadata( $package['image_metadata'] ) : array();
+		$image_metadata    = isset( $package['image_metadata'] ) && is_array( $package['image_metadata'] ) ? $this->sanitize_metadata( $package['image_metadata'] ) : array();
+		$workflow_metadata = isset( $package['workflow_metadata'] ) && is_array( $package['workflow_metadata'] ) ? $this->sanitize_metadata( $package['workflow_metadata'] ) : array();
 		$thread_count     = isset( $stats['thread_count'] ) ? absint( $stats['thread_count'] ) : 0;
 		$attachment_count = isset( $stats['attachment_count'] ) ? absint( $stats['attachment_count'] ) : 0;
 
@@ -772,6 +852,7 @@ final class SCAI_Ticket_AI_Service {
 				'context_thread_count'     => $thread_count,
 				'context_attachment_count' => $attachment_count,
 			),
+			$workflow_metadata,
 			$image_metadata
 		);
 	}
@@ -818,6 +899,18 @@ final class SCAI_Ticket_AI_Service {
 		$text = preg_replace( "/\n{3,}/", "\n\n", $text );
 
 		return is_string( $text ) ? trim( $text ) : '';
+	}
+
+	/**
+	 * Get a Unicode-aware text length for safe request metadata.
+	 *
+	 * @param string $text Sanitized text.
+	 * @return int
+	 */
+	private function get_text_length( $text ) {
+		$text = (string) $text;
+
+		return function_exists( 'mb_strlen' ) ? absint( mb_strlen( $text ) ) : absint( strlen( $text ) );
 	}
 
 	/**

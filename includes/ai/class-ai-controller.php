@@ -51,6 +51,7 @@ final class SCAI_AI_Controller {
 		add_action( 'wp_ajax_scai_generate_ticket_summary', array( $this, 'ajax_generate_summary' ) );
 		add_action( 'wp_ajax_scai_generate_ticket_reply', array( $this, 'ajax_generate_reply' ) );
 		add_action( 'wp_ajax_scai_improve_ticket_reply', array( $this, 'ajax_improve_reply' ) );
+		add_action( 'wp_ajax_scai_merge_ticket_reply', array( $this, 'merge_ticket_reply' ) );
 		add_action( 'wp_ajax_scai_get_ticket_conversation_history', array( $this, 'get_ticket_conversation_history' ) );
 	}
 
@@ -185,6 +186,77 @@ final class SCAI_AI_Controller {
 		$response_options = $this->get_response_options_from_request();
 
 		$this->send_ai_response( $ticket_ai_service->improve_reply( $ticket_id, $reply_text, $response_options ), 'reply_improvement' );
+	}
+
+	/**
+	 * Handle merging an agent draft with an AI suggestion.
+	 *
+	 * @return void
+	 */
+	public function merge_ticket_reply() {
+		$feature  = 'reply_merge';
+		$verified = $this->verify_request( $feature );
+
+		if ( true !== $verified ) {
+			return;
+		}
+
+		$ticket_id = $this->get_ticket_id_from_request();
+
+		if ( 0 === $ticket_id ) {
+			wp_send_json_error( $this->build_error_response_data( 'invalid_ticket_id', __( 'Invalid ticket ID.', 'supportcandy-ai' ), $feature ), 400 );
+		}
+
+		if ( ! $this->current_user_can_run_ai_action( $ticket_id, $feature ) ) {
+			wp_send_json_error(
+				array(
+					'code'    => 'permission_denied',
+					'message' => __( 'You do not have permission to use AI for this ticket.', 'supportcandy-ai' ),
+					'feature' => $feature,
+				),
+				403
+			);
+		}
+
+		$current_draft = isset( $_POST['current_draft'] ) && is_scalar( $_POST['current_draft'] )
+			? sanitize_textarea_field( wp_unslash( (string) $_POST['current_draft'] ) )
+			: '';
+		$ai_suggestion = isset( $_POST['ai_suggestion'] ) && is_scalar( $_POST['ai_suggestion'] )
+			? sanitize_textarea_field( wp_unslash( (string) $_POST['ai_suggestion'] ) )
+			: '';
+
+		if ( '' === $current_draft ) {
+			wp_send_json_error(
+				$this->build_error_response_data( 'empty_current_draft', __( 'Type a draft in the reply editor before using Merge with my draft.', 'supportcandy-ai' ), $feature ),
+				400
+			);
+		}
+
+		if ( '' === $ai_suggestion ) {
+			wp_send_json_error(
+				$this->build_error_response_data( 'empty_ai_suggestion', __( 'Generate an AI suggestion before using Merge with my draft.', 'supportcandy-ai' ), $feature ),
+				400
+			);
+		}
+
+		$ticket_ai_service = $this->get_ticket_ai_service();
+
+		if ( ! $ticket_ai_service || ! method_exists( $ticket_ai_service, 'merge_reply' ) ) {
+			wp_send_json_error( $this->build_error_response_data( 'ticket_ai_service_unavailable', __( 'Ticket AI service is unavailable.', 'supportcandy-ai' ), $feature ), 500 );
+		}
+
+		$response_options = $this->get_response_options_from_request();
+
+		$this->send_ai_response(
+			$ticket_ai_service->merge_reply( $ticket_id, $current_draft, $ai_suggestion, $response_options ),
+			$feature,
+			array(
+				'input_lengths' => array(
+					'current_draft' => $this->get_text_length( $current_draft ),
+					'ai_suggestion' => $this->get_text_length( $ai_suggestion ),
+				),
+			)
+		);
 	}
 
 	/**
@@ -384,6 +456,7 @@ final class SCAI_AI_Controller {
 			'ticket_summary'    => __( 'Ticket Summary', 'supportcandy-ai' ),
 			'reply_generation'  => __( 'Reply Generation', 'supportcandy-ai' ),
 			'reply_improvement' => __( 'Reply Improvement', 'supportcandy-ai' ),
+			'reply_merge'       => __( 'Reply Merge', 'supportcandy-ai' ),
 		);
 
 		return isset( $labels[ $feature ] ) ? $labels[ $feature ] : $feature;
@@ -392,11 +465,12 @@ final class SCAI_AI_Controller {
 	/**
 	 * Send normalized AI response as JSON.
 	 *
-	 * @param mixed  $response AI response.
-	 * @param string $feature  Feature key.
+	 * @param mixed                $response   AI response.
+	 * @param string               $feature    Feature key.
+	 * @param array<string, mixed> $extra_data Additional safe response data.
 	 * @return void
 	 */
-	private function send_ai_response( $response, $feature ) {
+	private function send_ai_response( $response, $feature, array $extra_data = array() ) {
 		$feature = sanitize_key( $feature );
 
 		if ( ! $response instanceof SCAI_AI_Response ) {
@@ -419,15 +493,30 @@ final class SCAI_AI_Controller {
 		}
 
 		wp_send_json_success(
-			array(
-				'content'     => wp_kses_post( $response->get_content() ),
-				'provider'    => sanitize_key( $response->get_provider() ),
-				'model'       => sanitize_text_field( $response->get_model() ),
-				'tokens'      => absint( $response->get_total_tokens() ),
-				'duration_ms' => absint( $response->get_duration_ms() ),
-				'feature'     => $feature,
+			array_merge(
+				array(
+					'content'     => wp_kses_post( $response->get_content() ),
+					'provider'    => sanitize_key( $response->get_provider() ),
+					'model'       => sanitize_text_field( $response->get_model() ),
+					'tokens'      => absint( $response->get_total_tokens() ),
+					'duration_ms' => absint( $response->get_duration_ms() ),
+					'feature'     => $feature,
+				),
+				$extra_data
 			)
 		);
+	}
+
+	/**
+	 * Get a Unicode-aware input length for safe response metadata.
+	 *
+	 * @param string $text Sanitized input text.
+	 * @return int
+	 */
+	private function get_text_length( $text ) {
+		$text = (string) $text;
+
+		return function_exists( 'mb_strlen' ) ? absint( mb_strlen( $text ) ) : absint( strlen( $text ) );
 	}
 
 	/**

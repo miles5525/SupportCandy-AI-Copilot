@@ -5,6 +5,7 @@
 	var triggerId = 'scai-ticket-ai-trigger';
 	var popupPositionStorageKey = 'scai_ai_popup_position';
 	var latestResultText = '';
+	var pendingMergedReply = '';
 	var refreshTimer = null;
 	var mutationObserver = null;
 	var historyPatched = false;
@@ -15,6 +16,11 @@
 	var historyRequestSequence = 0;
 	var latestHistoryItems = [];
 	var showAllHistory = false;
+	var scaiReplyEditorDirty = false;
+	var scaiBeforeUnloadBound = false;
+	var scaiSubmittingReply = false;
+	var scaiWatchedReplyEditorElement = null;
+	var scaiReplySubmitResetTimer = null;
 
 	function getConfig() {
 		var config = window.scaiTicketAI || {};
@@ -493,6 +499,13 @@
 		var resultActions;
 		var copyButton;
 		var insertButton;
+		var applyMergedButton;
+		var insertModeControl;
+		var insertModeLabel;
+		var insertMode;
+		var insertModeOptions;
+		var insertModeIndex;
+		var insertModeOption;
 		var message;
 		var historySection;
 		var historyTitle;
@@ -605,14 +618,14 @@
 		draftLabel = document.createElement( 'label' );
 		draftLabel.className = 'scai-draft-label';
 		draftLabel.setAttribute( 'for', 'scai-draft-reply' );
-		draftLabel.textContent = getString( 'draftLabel', 'Draft Reply' );
+		draftLabel.textContent = getString( 'draftLabel', 'Draft fallback / optional draft text' );
 
 		draft = document.createElement( 'textarea' );
 		draft.id = 'scai-draft-reply';
 		draft.className = 'scai-draft-reply';
 		draft.rows = 5;
 
-		improveButton = createButton( 'scai-improve-draft', getString( 'improveDraft', 'Improve Draft' ) );
+		improveButton = createButton( 'scai-improve-draft', getString( 'improveDraft', 'Improve Current Draft' ) );
 
 		output = document.createElement( 'pre' );
 		output.className = 'scai-ticket-ai-output scai-result-hidden';
@@ -624,9 +637,35 @@
 
 		copyButton = createButton( 'scai-copy-result', 'Copy Result' );
 		insertButton = createButton( 'scai-insert-result', 'Insert into Reply Editor' );
+		insertModeControl = document.createElement( 'label' );
+		insertModeControl.className = 'scai-insert-mode-control';
+		insertModeLabel = document.createElement( 'span' );
+		insertModeLabel.textContent = 'Insert Mode';
+		insertMode = document.createElement( 'select' );
+		insertMode.className = 'scai-insert-mode';
+		insertModeOptions = [
+			[ 'merge', 'Merge with my draft' ],
+			[ 'append', 'Append below draft' ],
+			[ 'replace', 'Replace draft' ]
+		];
 
+		for ( insertModeIndex = 0; insertModeIndex < insertModeOptions.length; insertModeIndex++ ) {
+			insertModeOption = document.createElement( 'option' );
+			insertModeOption.value = insertModeOptions[ insertModeIndex ][0];
+			insertModeOption.textContent = insertModeOptions[ insertModeIndex ][1];
+			insertModeOption.selected = insertModeOption.value === 'merge';
+			insertMode.appendChild( insertModeOption );
+		}
+
+		insertModeControl.appendChild( insertModeLabel );
+		insertModeControl.appendChild( insertMode );
+		applyMergedButton = createButton( 'scai-apply-merged-reply', 'Apply Merged Reply' );
+		applyMergedButton.style.display = 'none';
+
+		resultActions.appendChild( insertModeControl );
 		resultActions.appendChild( copyButton );
 		resultActions.appendChild( insertButton );
+		resultActions.appendChild( applyMergedButton );
 
 		message = document.createElement( 'p' );
 		message.className = 'scai-ticket-ai-message';
@@ -1047,6 +1086,7 @@
 	function updatePanelState( panel, detection, viewState ) {
 		var ticketId = detection && detection.id ? detection.id : 0;
 		var confidence = detection && detection.confidence ? detection.confidence : '';
+		var previousTicketId = panel ? parseTicketId( panel.getAttribute( 'data-ticket-id' ) ) : 0;
 		var status = panel ? panel.querySelector( '.scai-ticket-ai-status' ) : null;
 		var manualWrap = panel ? panel.querySelector( '.scai-manual-ticket-id-wrap' ) : null;
 		var manualInput = panel ? panel.querySelector( '.scai-manual-ticket-id' ) : null;
@@ -1054,6 +1094,10 @@
 
 		if ( ! panel ) {
 			return;
+		}
+
+		if ( previousTicketId !== ( confidence === 'high' ? ticketId : 0 ) ) {
+			resetPendingMergedReply( panel );
 		}
 
 		panel.setAttribute( 'data-ticket-id', confidence === 'high' ? String( ticketId ) : '' );
@@ -1153,6 +1197,7 @@
 		var improveButton;
 		var copyButton;
 		var insertButton;
+		var applyMergedButton;
 		var draft;
 		var output;
 
@@ -1165,6 +1210,7 @@
 		improveButton = panel.querySelector( '.scai-improve-draft' );
 		copyButton = panel.querySelector( '.scai-copy-result' );
 		insertButton = panel.querySelector( '.scai-insert-result' );
+		applyMergedButton = panel.querySelector( '.scai-apply-merged-reply' );
 		draft = panel.querySelector( '.scai-draft-reply' );
 		output = panel.querySelector( '.scai-ticket-ai-output' );
 
@@ -1172,6 +1218,7 @@
 
 		panel.addEventListener( 'change', function ( event ) {
 			if ( event.target && event.target.classList && event.target.classList.contains( 'scai-manual-ticket-id' ) ) {
+				resetPendingMergedReply( panel );
 				refreshConversationHistory( true );
 			}
 		} );
@@ -1190,7 +1237,18 @@
 
 		if ( improveButton ) {
 			improveButton.addEventListener( 'click', function () {
-				runAction( 'scai_improve_ticket_reply', panel, draft ? draft.value : '', improveButton, output );
+				var replyText = getReplyEditorContent();
+
+				if ( ! replyText && draft ) {
+					replyText = String( draft.value || '' ).trim();
+				}
+
+				if ( ! replyText ) {
+					showError( output, 'Type a draft in the reply editor first, or paste text into the draft box.' );
+					return;
+				}
+
+				runAction( 'scai_improve_ticket_reply', panel, replyText, improveButton, output );
 			} );
 		}
 
@@ -1214,18 +1272,34 @@
 		if ( insertButton ) {
 			insertButton.addEventListener( 'click', function () {
 				var text = getLatestResultText();
+				var mode = getSelectedInsertMode( panel );
 
-				if ( ! text ) {
-					showPanelMessage( 'No AI result is available to insert.', 'error' );
+				if ( ! text && mode !== 'merge' ) {
+					showPanelMessage(
+						'No AI result is available to insert.',
+						'error'
+					);
 					return;
 				}
 
-				if ( insertIntoReplyEditor( text ) ) {
-					showPanelMessage( 'AI result inserted into the reply editor. Review before submitting.', 'success' );
+				insertAIContentIntoReplyEditor( text, panel, insertButton, output );
+			} );
+		}
+
+		if ( applyMergedButton ) {
+			applyMergedButton.addEventListener( 'click', function () {
+				if ( ! pendingMergedReply ) {
+					showPanelMessage( 'No merged reply is waiting to be applied.', 'error' );
 					return;
 				}
 
-				showPanelMessage( 'Reply editor not found. Please copy the result manually.', 'error' );
+				if ( ! setReplyEditorContent( pendingMergedReply ) ) {
+					showPanelMessage( 'Reply editor not found. The merged reply was not applied.', 'error' );
+					return;
+				}
+
+				resetPendingMergedReply( panel );
+				showPanelMessage( 'Merged reply applied to editor. Review before submitting.', 'success' );
 			} );
 		}
 	}
@@ -1294,6 +1368,33 @@
 		return defaults;
 	}
 
+	function getSelectedInsertMode( panel ) {
+		var select;
+		var value;
+
+		panel = panel || document.getElementById( panelId );
+		select = panel ? panel.querySelector( '.scai-insert-mode' ) : null;
+		value = select ? String( select.value || '' ) : '';
+
+		return [ 'merge', 'append', 'replace' ].indexOf( value ) !== -1 ? value : 'merge';
+	}
+
+	function setPendingMergedReply( reply, panel ) {
+		var button;
+
+		pendingMergedReply = String( reply || '' ).trim();
+		panel = panel || document.getElementById( panelId );
+		button = panel ? panel.querySelector( '.scai-apply-merged-reply' ) : null;
+
+		if ( button ) {
+			button.style.display = pendingMergedReply ? '' : 'none';
+		}
+	}
+
+	function resetPendingMergedReply( panel ) {
+		setPendingMergedReply( '', panel );
+	}
+
 	function runAction( action, panel, replyText, button, output ) {
 		var config = getConfig();
 		var ticketId = resolveTicketId( panel );
@@ -1335,6 +1436,7 @@
 			payload.format = responseOptions.format;
 		}
 
+		resetPendingMergedReply( panel );
 		setLoading( button, output, true );
 
 		postAjax( config.ajaxUrl, payload )
@@ -1396,13 +1498,13 @@
 		} );
 	}
 
-	function setLoading( button, output, isLoading ) {
+	function setLoading( button, output, isLoading, loadingMessage ) {
 		if ( button ) {
 			button.disabled = isLoading;
 		}
 
 		if ( output && isLoading ) {
-			output.textContent = getString( 'loading', 'Working...' );
+			output.textContent = loadingMessage || getString( 'loading', 'Working...' );
 			output.className = 'scai-ticket-ai-output scai-is-loading';
 		}
 	}
@@ -1420,6 +1522,7 @@
 		latestResultText = content;
 
 		if ( ! content ) {
+			resetPendingMergedReply( getPanelFromElement( output ) );
 			output.textContent = '';
 			output.className = 'scai-ticket-ai-output scai-result-hidden';
 			panel = getPanelFromElement( output );
@@ -1503,11 +1606,14 @@
 	}
 
 	function findReplyEditor() {
+		return findActualReplyEditor() || findDraftTextareaFallback();
+	}
+
+	function findActualReplyEditor() {
 		return findTinyMceEditor() ||
 			findIframeEditor() ||
 			findContentEditableEditor() ||
-			findTextareaEditor() ||
-			findDraftTextareaFallback();
+			findTextareaEditor();
 	}
 
 	function findTinyMceEditor() {
@@ -1686,13 +1792,187 @@
 	}
 
 	function insertIntoReplyEditor( text ) {
-		var editor = findReplyEditor();
+		return setReplyEditorContent( text );
+	}
+
+	function getReplyEditorContent() {
+		var editor = findActualReplyEditor();
+		var element;
+		var content;
+
+		if ( ! editor || ! editor.element ) {
+			return '';
+		}
+
+		element = editor.element;
+
+		if ( editor.type === 'tinymce' && editor.editor && typeof editor.editor.getContent === 'function' ) {
+			content = editor.editor.getContent( { format: 'text' } );
+			return String( content || '' ).trim();
+		}
+
+		if ( window.wp && window.wp.editor && typeof window.wp.editor.getContent === 'function' && element.id ) {
+			content = window.wp.editor.getContent( element.id );
+			if ( typeof content === 'string' ) {
+				return htmlToPlainText( content );
+			}
+		}
+
+		if ( editor.type === 'textarea' || element.tagName === 'TEXTAREA' || element.tagName === 'INPUT' ) {
+			return String( element.value || '' ).trim();
+		}
+
+		return String( typeof element.innerText === 'string' ? element.innerText : element.textContent || '' ).trim();
+	}
+
+	function setReplyEditorContent( content ) {
+		var editor = findActualReplyEditor();
 
 		if ( ! editor ) {
 			return false;
 		}
 
-		return setEditorValue( editor, text );
+		return setEditorValue( editor, String( content || '' ) );
+	}
+
+	function appendToReplyEditorContent( content ) {
+		var current = getReplyEditorContent();
+		var addition = String( content || '' ).trim();
+
+		if ( ! addition ) {
+			return false;
+		}
+
+		return setReplyEditorContent( current ? current.replace( /\s+$/, '' ) + '\n\n' + addition : addition );
+	}
+
+	function htmlToPlainText( html ) {
+		var container = document.createElement( 'div' );
+
+		container.innerHTML = String( html || '' );
+
+		return String( typeof container.innerText === 'string' ? container.innerText : container.textContent || '' ).trim();
+	}
+
+	function insertAIContentIntoReplyEditor( text, panel, button, output ) {
+		var current = getReplyEditorContent();
+		var mode = getSelectedInsertMode( panel );
+
+		text = String( text || '' ).trim();
+
+		if ( mode === 'merge' ) {
+			if ( ! current ) {
+				showPanelMessage( 'Type a draft in the reply editor first before using Merge with my draft.', 'error' );
+				return;
+			}
+
+			if ( ! text ) {
+				showPanelMessage( 'Generate an AI suggestion first before using Merge with my draft.', 'error' );
+				return;
+			}
+
+			mergeAIContentWithCurrentDraft( current, text, panel, button, output );
+			return;
+		}
+
+		if ( ! text ) {
+			showPanelMessage( 'No AI result is available to insert.', 'error' );
+			return;
+		}
+
+		if ( ! current || mode === 'replace' ) {
+			if ( setReplyEditorContent( text ) ) {
+				resetPendingMergedReply( panel );
+				showPanelMessage( 'AI result inserted into the reply editor. Review before submitting.', 'success' );
+				return;
+			}
+
+			showPanelMessage( 'Reply editor not found. Please copy the result manually.', 'error' );
+			return;
+		}
+
+		if ( mode === 'append' ) {
+			if ( appendToReplyEditorContent( text ) ) {
+				resetPendingMergedReply( panel );
+				showPanelMessage( 'AI result appended below the current draft. Review before submitting.', 'success' );
+				return;
+			}
+
+			showPanelMessage( 'Reply editor not found. Please copy the result manually.', 'error' );
+			return;
+		}
+
+	}
+
+	function mergeAIContentWithCurrentDraft( currentDraft, aiSuggestion, panel, button, output ) {
+		var config = getConfig();
+		var ticketId = resolveTicketId( panel );
+		var responseOptions = getSelectedResponseOptions( panel );
+		var payload;
+		var debug = getConfig().debug;
+
+		currentDraft = String( currentDraft || '' ).trim();
+		aiSuggestion = String( aiSuggestion || '' ).trim();
+
+		if ( ! currentDraft ) {
+			showPanelMessage( 'Type a draft in the reply editor first before using Merge with my draft.', 'error' );
+			return;
+		}
+
+		if ( ! aiSuggestion ) {
+			showPanelMessage( 'Generate an AI suggestion first before using Merge with my draft.', 'error' );
+			return;
+		}
+
+		if ( ! config.ajaxUrl || ! config.nonce || ! ticketId ) {
+			showError( output, ! ticketId ? 'Please enter the internal Ticket ID.' : getString( 'missingConfig', 'AI actions are not available on this screen.' ) );
+			return;
+		}
+
+		resetPendingMergedReply( panel );
+
+		if ( debug && window.console && typeof window.console.debug === 'function' ) {
+			window.console.debug( 'SupportCandy AI merge input lengths', {
+				current_draft: currentDraft.length,
+				ai_suggestion: aiSuggestion.length
+			} );
+		}
+
+		payload = {
+			action: 'scai_merge_ticket_reply',
+			nonce: config.nonce,
+			ticket_id: ticketId,
+			current_draft: currentDraft,
+			ai_suggestion: aiSuggestion,
+			tone: responseOptions.tone,
+			length: responseOptions.length,
+			format: responseOptions.format
+		};
+
+		setLoading( button, output, true, 'Merging your draft with the AI suggestion...' );
+
+		postAjax( config.ajaxUrl, payload ).then( function ( response ) {
+			var mergedContent = response && response.success && response.data && typeof response.data.content === 'string' ? response.data.content.trim() : '';
+
+			if ( ! mergedContent ) {
+				showError( output, getResponseMessage( response ) );
+				setLoading( button, output, false );
+				return;
+			}
+
+			showResult( output, response.data );
+			setPendingMergedReply( mergedContent, panel );
+			setLoading( button, output, false );
+			showPanelMessage( 'Merged reply is ready to review. Apply it when you are satisfied.', 'success' );
+			refreshConversationHistory( true );
+		}, function () {
+			showError( output, getString( 'requestFailed', 'AI request failed. Please try again.' ) );
+			setLoading( button, output, false );
+		} )[ 'catch' ]( function () {
+			showError( output, getString( 'requestFailed', 'AI request failed. Please try again.' ) );
+			setLoading( button, output, false );
+		} );
+
 	}
 
 	function setEditorValue( editor, text ) {
@@ -1704,27 +1984,24 @@
 
 		if ( editor.type === 'tinymce' && editor.editor ) {
 			editor.editor.setContent( textToSafeHtml( text ) );
-			if ( typeof editor.editor.save === 'function' ) {
-				editor.editor.save();
-			}
-			if ( typeof editor.editor.fire === 'function' ) {
-				editor.editor.fire( 'change' );
-			}
-			triggerEditorEvents( element );
-			if ( typeof editor.editor.getElement === 'function' && editor.editor.getElement() ) {
-				triggerEditorEvents( editor.editor.getElement() );
-			}
+			markReplyEditorDirty( editor );
+			return true;
+		}
+
+		if ( window.wp && window.wp.editor && typeof window.wp.editor.setContent === 'function' && element.id ) {
+			window.wp.editor.setContent( element.id, textToSafeHtml( text ) );
+			markReplyEditorDirty( editor );
 			return true;
 		}
 
 		if ( editor.type === 'textarea' || element.tagName === 'TEXTAREA' || element.tagName === 'INPUT' ) {
 			element.value = text;
-			triggerEditorEvents( element );
+			markReplyEditorDirty( editor );
 			return true;
 		}
 
 		element.textContent = text;
-		triggerEditorEvents( element );
+		markReplyEditorDirty( editor );
 
 		return true;
 	}
@@ -1739,15 +2016,226 @@
 			.replace( /\r?\n/g, '<br>' );
 	}
 
+	function markReplyEditorDirty( editor ) {
+		var element;
+		var sourceElement;
+
+		editor = editor || findActualReplyEditor();
+
+		if ( ! editor || ! editor.element ) {
+			return;
+		}
+
+		element = editor.element;
+
+		if ( editor.type === 'tinymce' && editor.editor ) {
+			if ( typeof editor.editor.fire === 'function' ) {
+				editor.editor.fire( 'input' );
+				editor.editor.fire( 'change' );
+			}
+
+			if ( typeof editor.editor.save === 'function' ) {
+				editor.editor.save();
+			}
+
+			if ( typeof editor.editor.setDirty === 'function' ) {
+				editor.editor.setDirty( true );
+			}
+
+			if ( typeof editor.editor.getElement === 'function' ) {
+				sourceElement = editor.editor.getElement();
+			}
+		}
+
+		triggerEditorEvents( element );
+
+		if ( sourceElement && sourceElement !== element ) {
+			triggerEditorEvents( sourceElement );
+		}
+
+		scaiReplyEditorDirty = true;
+		scaiSubmittingReply = false;
+		bindBeforeUnloadWarning();
+	}
+
 	function triggerEditorEvents( element ) {
-		var inputEvent = document.createEvent( 'HTMLEvents' );
-		var changeEvent = document.createEvent( 'HTMLEvents' );
+		var eventDocument;
+		var eventWindow;
+		var eventNames = [ 'input', 'change', 'keyup' ];
+		var index;
+		var event;
 
-		inputEvent.initEvent( 'input', true, false );
-		changeEvent.initEvent( 'change', true, false );
+		if ( ! element || typeof element.dispatchEvent !== 'function' ) {
+			return;
+		}
 
-		element.dispatchEvent( inputEvent );
-		element.dispatchEvent( changeEvent );
+		eventDocument = element.ownerDocument || document;
+		eventWindow = eventDocument.defaultView || window;
+
+		for ( index = 0; index < eventNames.length; index++ ) {
+			if ( typeof eventWindow.Event === 'function' ) {
+				event = new eventWindow.Event( eventNames[ index ], { bubbles: true } );
+			} else {
+				event = eventDocument.createEvent( 'HTMLEvents' );
+				event.initEvent( eventNames[ index ], true, false );
+			}
+
+			element.dispatchEvent( event );
+		}
+
+		if ( window.jQuery ) {
+			window.jQuery( element ).trigger( 'input' ).trigger( 'change' ).trigger( 'keyup' );
+		}
+	}
+
+	function watchReplyEditorForManualChanges() {
+		var editor = findActualReplyEditor();
+		var sourceElement;
+		var eventNames = [ 'input', 'change', 'keyup', 'paste', 'cut' ];
+		var handleChange;
+
+		if ( ! editor || ! editor.element ) {
+			return;
+		}
+
+		if ( scaiWatchedReplyEditorElement && scaiWatchedReplyEditorElement !== editor.element ) {
+			scaiReplyEditorDirty = false;
+			scaiSubmittingReply = false;
+		}
+
+		scaiWatchedReplyEditorElement = editor.element;
+		handleChange = function ( event ) {
+			scaiSubmittingReply = false;
+			updateReplyEditorDirtyState();
+
+			if ( event && ( event.type === 'paste' || event.type === 'cut' ) ) {
+				window.setTimeout( updateReplyEditorDirtyState, 0 );
+			}
+		};
+
+		bindReplyEditorElementEvents( editor.element, eventNames, handleChange );
+
+		if ( editor.type === 'tinymce' && editor.editor ) {
+			if ( ! editor.editor._scaiDirtyWatched && typeof editor.editor.on === 'function' ) {
+				editor.editor.on( eventNames.join( ' ' ), handleChange );
+				editor.editor._scaiDirtyWatched = true;
+			}
+
+			if ( typeof editor.editor.getElement === 'function' ) {
+				sourceElement = editor.editor.getElement();
+				bindReplyEditorElementEvents( sourceElement, eventNames, handleChange );
+			}
+		}
+
+		bindBeforeUnloadWarning();
+	}
+
+	function bindReplyEditorElementEvents( element, eventNames, handler ) {
+		var index;
+
+		if ( ! element || ! element.addEventListener || element.getAttribute( 'data-scai-dirty-watched' ) === '1' ) {
+			return;
+		}
+
+		for ( index = 0; index < eventNames.length; index++ ) {
+			element.addEventListener( eventNames[ index ], handler );
+		}
+
+		element.setAttribute( 'data-scai-dirty-watched', '1' );
+	}
+
+	function updateReplyEditorDirtyState() {
+		var content = getReplyEditorContent();
+
+		scaiReplyEditorDirty = '' !== String( content || '' ).trim();
+
+		if ( scaiReplyEditorDirty ) {
+			bindBeforeUnloadWarning();
+		}
+	}
+
+	function bindBeforeUnloadWarning() {
+		if ( scaiBeforeUnloadBound ) {
+			return;
+		}
+
+		window.addEventListener( 'beforeunload', function ( event ) {
+			if ( ! scaiReplyEditorDirty || scaiSubmittingReply || ! String( getReplyEditorContent() || '' ).trim() ) {
+				return;
+			}
+
+			event.preventDefault();
+			event.returnValue = '';
+		} );
+
+		scaiBeforeUnloadBound = true;
+	}
+
+	function watchSupportCandyReplySubmit() {
+		document.addEventListener( 'submit', function ( event ) {
+			var editor = findActualReplyEditor();
+			var sourceElement = getReplyEditorSourceElement( editor );
+
+			if ( sourceElement && event.target && typeof event.target.contains === 'function' && event.target.contains( sourceElement ) ) {
+				beginReplySubmission();
+			}
+		}, true );
+
+		document.addEventListener( 'click', function ( event ) {
+			var control = event.target && event.target.closest ? event.target.closest( 'button[type="submit"], input[type="submit"], .wpsc-reply-submit, .wpsc-it-reply-submit, [class*="reply"][class*="send"], [class*="reply"][class*="submit"], [id*="reply"][id*="send"], [id*="reply"][id*="submit"]' ) : null;
+
+			if ( control && isReplySubmitControl( control ) ) {
+				beginReplySubmission();
+			}
+		}, true );
+	}
+
+	function getReplyEditorSourceElement( editor ) {
+		if ( ! editor ) {
+			return null;
+		}
+
+		if ( editor.type === 'tinymce' && editor.editor && typeof editor.editor.getElement === 'function' ) {
+			return editor.editor.getElement() || editor.element;
+		}
+
+		return editor.element || null;
+	}
+
+	function isReplySubmitControl( control ) {
+		var editor = findActualReplyEditor();
+		var sourceElement = getReplyEditorSourceElement( editor );
+		var form;
+		var replyArea;
+
+		if ( ! control || ! sourceElement ) {
+			return false;
+		}
+
+		form = sourceElement.closest ? sourceElement.closest( 'form' ) : null;
+
+		if ( form && form.contains( control ) ) {
+			return true;
+		}
+
+		replyArea = sourceElement.closest ? sourceElement.closest( '.wpsc-reply, .wpsc-it-reply, .wpsc-editor' ) : null;
+
+		return !! ( replyArea && replyArea.contains( control ) );
+	}
+
+	function beginReplySubmission() {
+		scaiSubmittingReply = true;
+		scaiReplyEditorDirty = false;
+
+		if ( scaiReplySubmitResetTimer ) {
+			window.clearTimeout( scaiReplySubmitResetTimer );
+		}
+
+		scaiReplySubmitResetTimer = window.setTimeout( function () {
+			scaiReplySubmitResetTimer = null;
+			scaiSubmittingReply = false;
+			updateReplyEditorDirtyState();
+		}, 5000 );
 	}
 
 	function showPanelMessage( message, type ) {
@@ -1992,12 +2480,10 @@
 		} );
 
 		insertButton.addEventListener( 'click', function () {
-			if ( insertIntoReplyEditor( content ) ) {
-				showPanelMessage( 'AI history item inserted into the reply editor. Review before submitting.', 'success' );
-				return;
-			}
+			var panel = document.getElementById( panelId );
+			var output = panel ? panel.querySelector( '.scai-ticket-ai-output' ) : null;
 
-			showPanelMessage( 'Reply editor not found. Please copy the history item manually.', 'error' );
+			insertAIContentIntoReplyEditor( content, panel, insertButton, output );
 		} );
 
 		viewButton.addEventListener( 'click', function () {
@@ -2064,6 +2550,7 @@
 
 		bindEvents( panel );
 		ensurePopupTrigger();
+		watchReplyEditorForManualChanges();
 		refreshConversationHistory( false );
 
 		if ( ! getConfig().ajaxUrl || ! getConfig().nonce ) {
@@ -2095,6 +2582,7 @@
 		}
 
 		latestResultText = '';
+		pendingMergedReply = '';
 		historyLoadedTicketId = 0;
 		historyRequestTicketId = 0;
 		historyRequestPromise = null;
@@ -2209,6 +2697,8 @@
 		initialized = true;
 
 		patchHistoryNavigation();
+		bindBeforeUnloadWarning();
+		watchSupportCandyReplySubmit();
 		startDomObserver();
 		refreshTicketAIPanel();
 
