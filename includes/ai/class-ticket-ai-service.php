@@ -92,6 +92,8 @@ final class SCAI_Ticket_AI_Service {
 			return $package;
 		}
 
+		$package['response_options'] = $this->normalize_response_options( $args );
+
 		$prompt_engine = $this->get_prompt_engine();
 
 		if ( ! $prompt_engine ) {
@@ -129,6 +131,8 @@ final class SCAI_Ticket_AI_Service {
 		if ( $package instanceof SCAI_AI_Response ) {
 			return $package;
 		}
+
+		$package['response_options'] = $this->normalize_response_options( $args );
 
 		$prompt_engine = $this->get_prompt_engine();
 
@@ -180,6 +184,8 @@ final class SCAI_Ticket_AI_Service {
 		if ( $package instanceof SCAI_AI_Response ) {
 			return $package;
 		}
+
+		$package['response_options'] = $this->normalize_response_options( $args );
 
 		$prompt_engine = $this->get_prompt_engine();
 
@@ -375,7 +381,10 @@ final class SCAI_Ticket_AI_Service {
 		$stats            = isset( $ticket_context['stats'] ) && is_array( $ticket_context['stats'] ) ? $ticket_context['stats'] : array();
 		$context_hash     = isset( $context['context_hash'] ) ? $context['context_hash'] : '';
 		$context_hash     = '' === $context_hash && isset( $ticket_context['context_hash'] ) ? $ticket_context['context_hash'] : $context_hash;
-		$conversation_args = array(
+		$response_options = isset( $context['response_options'] ) && is_array( $context['response_options'] )
+			? $this->normalize_response_options( $context['response_options'] )
+			: $this->normalize_response_options( array() );
+		$conversation_args  = array(
 			'provider'          => $response->get_provider(),
 			'model'             => $response->get_model(),
 			'tokens'            => $response->get_total_tokens(),
@@ -388,6 +397,9 @@ final class SCAI_Ticket_AI_Service {
 				'finish_reason'    => $response->get_finish_reason(),
 				'thread_count'     => isset( $stats['thread_count'] ) ? absint( $stats['thread_count'] ) : 0,
 				'attachment_count' => isset( $stats['attachment_count'] ) ? absint( $stats['attachment_count'] ) : 0,
+				'tone'             => $response_options['tone'],
+				'length'           => $response_options['length'],
+				'format'           => $response_options['format'],
 			),
 		);
 
@@ -440,6 +452,11 @@ final class SCAI_Ticket_AI_Service {
 	 */
 	private function with_ticket_metadata( array $args, $ticket_id, $feature, array $package ) {
 		$metadata = isset( $args['metadata'] ) && is_array( $args['metadata'] ) ? $this->sanitize_metadata( $args['metadata'] ) : array();
+		$options  = $this->normalize_response_options( $args );
+
+		$args['tone']   = $options['tone'];
+		$args['length'] = $options['length'];
+		$args['format'] = $options['format'];
 
 		$args['metadata'] = array_merge(
 			$metadata,
@@ -447,6 +464,45 @@ final class SCAI_Ticket_AI_Service {
 		);
 
 		return $args;
+	}
+
+	/**
+	 * Normalize response-writing options.
+	 *
+	 * @param array<string, mixed> $args Request arguments or response options.
+	 * @return array{tone: string, length: string, format: string}
+	 */
+	private function normalize_response_options( array $args ) {
+		$source = isset( $args['response_options'] ) && is_array( $args['response_options'] )
+			? $args['response_options']
+			: array();
+
+		foreach ( array( 'tone', 'length', 'format' ) as $key ) {
+			if ( isset( $args[ $key ] ) ) {
+				$source[ $key ] = $args[ $key ];
+			}
+		}
+
+		$defaults = array(
+			'tone'   => 'professional',
+			'length' => 'standard',
+			'format' => 'plain',
+		);
+		$allowed  = array(
+			'tone'   => array( 'professional', 'friendly', 'empathetic', 'concise' ),
+			'length' => array( 'short', 'standard', 'detailed' ),
+			'format' => array( 'plain', 'step_by_step', 'technical' ),
+		);
+
+		foreach ( $defaults as $key => $default ) {
+			$value = isset( $source[ $key ] ) && is_scalar( $source[ $key ] )
+				? sanitize_key( (string) $source[ $key ] )
+				: '';
+
+			$defaults[ $key ] = in_array( $value, $allowed[ $key ], true ) ? $value : $default;
+		}
+
+		return $defaults;
 	}
 
 	/**

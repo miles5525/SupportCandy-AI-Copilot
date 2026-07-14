@@ -383,6 +383,52 @@
 	font-size: 12px;
 }
 
+#scai-ticket-ai-panel.scai-ai-popup .scai-response-controls {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	align-items: end;
+	gap: 8px;
+	margin: 0 0 10px;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-response-control {
+	display: flex;
+	min-width: 0;
+	margin: 0;
+	flex-direction: column;
+	gap: 4px;
+	color: var(--scai-text);
+	font-size: 12px;
+	font-weight: 600;
+	line-height: 1.3;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-response-tone,
+#scai-ticket-ai-panel.scai-ai-popup .scai-response-length,
+#scai-ticket-ai-panel.scai-ai-popup .scai-response-format {
+	display: block;
+	width: 100%;
+	max-width: none;
+	height: 34px;
+	min-height: 34px;
+	margin: 0;
+	padding: 0 28px 0 10px;
+	border: 1px solid var(--scai-border);
+	border-radius: 4px;
+	background-color: var(--scai-surface);
+	color: var(--scai-text);
+	font-size: 13px;
+	line-height: 32px;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-response-tone:focus,
+#scai-ticket-ai-panel.scai-ai-popup .scai-response-length:focus,
+#scai-ticket-ai-panel.scai-ai-popup .scai-response-format:focus {
+	border-color: var(--scai-border-strong);
+	box-shadow: 0 0 0 1px var(--scai-border-strong);
+	outline: 0;
+}
+
 #scai-ticket-ai-panel.scai-ai-popup .scai-manual-ticket-id-wrap:empty {
 	display: none;
 }
@@ -391,9 +437,28 @@
 	position: sticky;
 	top: -10px;
 	z-index: 2;
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
 	margin: 0 0 8px;
 	padding: 6px 0;
 	background: #fff;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-generate-summary,
+#scai-ticket-ai-panel.scai-ai-popup .scai-generate-reply,
+#scai-ticket-ai-panel.scai-ai-popup .scai-improve-draft,
+#scai-ticket-ai-panel.scai-ai-popup .scai-copy-result,
+#scai-ticket-ai-panel.scai-ai-popup .scai-insert-result,
+#scai-ticket-ai-panel.scai-ai-popup .scai-copy-history-item,
+#scai-ticket-ai-panel.scai-ai-popup .scai-insert-history-item,
+#scai-ticket-ai-panel.scai-ai-popup .scai-view-history-item,
+#scai-ticket-ai-panel.scai-ai-popup .scai-toggle-more-history {
+	min-height: 34px;
+	padding-top: 5px;
+	padding-bottom: 5px;
+	line-height: 1.4;
 }
 
 #scai-ticket-ai-panel.scai-ai-popup .scai-draft-reply {
@@ -408,6 +473,10 @@
 	max-height: 140px;
 	margin: 8px 0;
 	padding: 8px;
+}
+
+#scai-ticket-ai-panel.scai-ai-popup .scai-result-hidden {
+	display: none !important;
 }
 
 #scai-ticket-ai-panel.scai-ai-popup .scai-result-actions {
@@ -469,6 +538,12 @@
 	#scai-ticket-ai-panel.scai-ai-popup .scai-ai-popup-close {
 		width: 30px;
 		min-width: 30px;
+	}
+}
+
+@media (max-width: 520px) {
+	#scai-ticket-ai-panel.scai-ai-popup .scai-response-controls {
+		grid-template-columns: 1fr;
 	}
 }
 

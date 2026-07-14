@@ -482,6 +482,7 @@
 		var manualWrap;
 		var manualLabel;
 		var manualInput;
+		var responseControls;
 		var actions;
 		var summaryButton;
 		var replyButton;
@@ -535,10 +536,15 @@
 		status = document.createElement( 'p' );
 		status.className = 'scai-ticket-ai-status';
 
-		if ( ticketId && confidence === 'high' ) {
+		if ( ticketId && confidence === 'high' && getConfig().debug ) {
 			status.textContent = 'Detected Ticket ID: ' + ticketId;
+			status.hidden = false;
+		} else if ( ticketId && confidence === 'high' ) {
+			status.textContent = '';
+			status.hidden = true;
 		} else {
 			status.textContent = 'Enter the internal SupportCandy Ticket ID to use AI.';
+			status.hidden = false;
 		}
 
 		manualWrap = document.createElement( 'div' );
@@ -562,6 +568,31 @@
 			manualWrap.appendChild( manualInput );
 		}
 
+		responseControls = document.createElement( 'div' );
+		responseControls.className = 'scai-response-controls';
+		responseControls.appendChild(
+			createResponseControl( 'Tone', 'scai-response-tone', 'professional', [
+				[ 'professional', 'Professional' ],
+				[ 'friendly', 'Friendly' ],
+				[ 'empathetic', 'Empathetic' ],
+				[ 'concise', 'Concise' ]
+			] )
+		);
+		responseControls.appendChild(
+			createResponseControl( 'Length', 'scai-response-length', 'standard', [
+				[ 'short', 'Short' ],
+				[ 'standard', 'Standard' ],
+				[ 'detailed', 'Detailed' ]
+			] )
+		);
+		responseControls.appendChild(
+			createResponseControl( 'Format', 'scai-response-format', 'plain', [
+				[ 'plain', 'Plain' ],
+				[ 'step_by_step', 'Step-by-step' ],
+				[ 'technical', 'Technical' ]
+			] )
+		);
+
 		actions = document.createElement( 'div' );
 		actions.className = 'scai-ticket-ai-actions';
 
@@ -584,7 +615,7 @@
 		improveButton = createButton( 'scai-improve-draft', getString( 'improveDraft', 'Improve Draft' ) );
 
 		output = document.createElement( 'pre' );
-		output.className = 'scai-ticket-ai-output';
+		output.className = 'scai-ticket-ai-output scai-result-hidden';
 		output.setAttribute( 'aria-live', 'polite' );
 
 		resultActions = document.createElement( 'div' );
@@ -619,6 +650,7 @@
 
 		popupBody.appendChild( status );
 		popupBody.appendChild( manualWrap );
+		popupBody.appendChild( responseControls );
 		popupBody.appendChild( actions );
 		popupBody.appendChild( draftLabel );
 		popupBody.appendChild( draft );
@@ -660,7 +692,7 @@
 		anchor = document.createElement( 'div' );
 		anchor.className = 'scai-ai-popup-anchor';
 
-		trigger = createButton( 'scai-ai-trigger', '✨ AI' );
+		trigger = createButton( 'scai-ai-trigger', '✨ AI Assist' );
 		trigger.id = triggerId;
 		trigger.setAttribute( 'aria-controls', panelId );
 		trigger.setAttribute(
@@ -1028,10 +1060,15 @@
 		panel.setAttribute( 'data-ticket-confidence', confidence );
 
 		if ( status ) {
-			if ( ticketId && confidence === 'high' ) {
+			if ( ticketId && confidence === 'high' && getConfig().debug ) {
 				setElementText( status, 'Detected Ticket ID: ' + ticketId );
+				status.hidden = false;
+			} else if ( ticketId && confidence === 'high' ) {
+				setElementText( status, '' );
+				status.hidden = true;
 			} else {
 				setElementText( status, 'Enter the internal SupportCandy Ticket ID to use AI.' );
+				status.hidden = false;
 			}
 		}
 
@@ -1073,6 +1110,31 @@
 
 		manualWrap.appendChild( manualLabel );
 		manualWrap.appendChild( manualInput );
+	}
+
+	function createResponseControl( labelText, selectClass, defaultValue, options ) {
+		var wrapper = document.createElement( 'label' );
+		var label = document.createElement( 'span' );
+		var select = document.createElement( 'select' );
+		var index;
+		var option;
+
+		wrapper.className = 'scai-response-control';
+		label.textContent = labelText;
+		select.className = selectClass;
+
+		for ( index = 0; index < options.length; index++ ) {
+			option = document.createElement( 'option' );
+			option.value = options[ index ][0];
+			option.textContent = options[ index ][1];
+			option.selected = options[ index ][0] === defaultValue;
+			select.appendChild( option );
+		}
+
+		wrapper.appendChild( label );
+		wrapper.appendChild( select );
+
+		return wrapper;
 	}
 
 	function createButton( className, text ) {
@@ -1194,9 +1256,48 @@
 		return 0;
 	}
 
+	function getSelectedResponseOptions( panel ) {
+		var defaults = {
+			tone: 'professional',
+			length: 'standard',
+			format: 'plain'
+		};
+		var allowed = {
+			tone: [ 'professional', 'friendly', 'empathetic', 'concise' ],
+			length: [ 'short', 'standard', 'detailed' ],
+			format: [ 'plain', 'step_by_step', 'technical' ]
+		};
+		var selectors = {
+			tone: '.scai-response-tone',
+			length: '.scai-response-length',
+			format: '.scai-response-format'
+		};
+		var key;
+		var select;
+		var value;
+
+		panel = panel || document.getElementById( panelId );
+
+		for ( key in defaults ) {
+			if ( ! Object.prototype.hasOwnProperty.call( defaults, key ) ) {
+				continue;
+			}
+
+			select = panel ? panel.querySelector( selectors[ key ] ) : null;
+			value = select ? String( select.value || '' ) : '';
+
+			if ( allowed[ key ].indexOf( value ) !== -1 ) {
+				defaults[ key ] = value;
+			}
+		}
+
+		return defaults;
+	}
+
 	function runAction( action, panel, replyText, button, output ) {
 		var config = getConfig();
 		var ticketId = resolveTicketId( panel );
+		var responseOptions = getSelectedResponseOptions( panel );
 		var payload;
 
 		if ( ! config.ajaxUrl || ! config.nonce ) {
@@ -1222,6 +1323,16 @@
 
 		if ( action === 'scai_improve_ticket_reply' ) {
 			payload.reply_text = replyText;
+		}
+
+		if ( action === 'scai_generate_ticket_summary' ) {
+			payload.length = responseOptions.length;
+		}
+
+		if ( action === 'scai_generate_ticket_reply' || action === 'scai_improve_ticket_reply' ) {
+			payload.tone = responseOptions.tone;
+			payload.length = responseOptions.length;
+			payload.format = responseOptions.format;
 		}
 
 		setLoading( button, output, true );
@@ -1307,6 +1418,19 @@
 		}
 
 		latestResultText = content;
+
+		if ( ! content ) {
+			output.textContent = '';
+			output.className = 'scai-ticket-ai-output scai-result-hidden';
+			panel = getPanelFromElement( output );
+			resultActions = panel ? panel.querySelector( '.scai-result-actions' ) : null;
+
+			if ( resultActions ) {
+				resultActions.style.display = 'none';
+			}
+
+			return;
+		}
 
 		if ( data.provider ) {
 			meta.push( 'Provider: ' + data.provider );

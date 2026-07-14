@@ -89,7 +89,17 @@ final class SCAI_AI_Controller {
 			wp_send_json_error( $this->build_error_response_data( 'ticket_ai_service_unavailable', __( 'Ticket AI service is unavailable.', 'supportcandy-ai' ), 'ticket_summary' ), 500 );
 		}
 
-		$this->send_ai_response( $ticket_ai_service->generate_ticket_summary( $ticket_id ), 'ticket_summary' );
+		$response_options = $this->get_response_options_from_request();
+
+		$this->send_ai_response(
+			$ticket_ai_service->generate_ticket_summary(
+				$ticket_id,
+				array(
+					'length' => $response_options['length'],
+				)
+			),
+			'ticket_summary'
+		);
 	}
 
 	/**
@@ -127,7 +137,9 @@ final class SCAI_AI_Controller {
 			wp_send_json_error( $this->build_error_response_data( 'ticket_ai_service_unavailable', __( 'Ticket AI service is unavailable.', 'supportcandy-ai' ), 'reply_generation' ), 500 );
 		}
 
-		$this->send_ai_response( $ticket_ai_service->generate_reply( $ticket_id ), 'reply_generation' );
+		$response_options = $this->get_response_options_from_request();
+
+		$this->send_ai_response( $ticket_ai_service->generate_reply( $ticket_id, $response_options ), 'reply_generation' );
 	}
 
 	/**
@@ -170,7 +182,9 @@ final class SCAI_AI_Controller {
 			wp_send_json_error( $this->build_error_response_data( 'ticket_ai_service_unavailable', __( 'Ticket AI service is unavailable.', 'supportcandy-ai' ), 'reply_improvement' ), 500 );
 		}
 
-		$this->send_ai_response( $ticket_ai_service->improve_reply( $ticket_id, $reply_text ), 'reply_improvement' );
+		$response_options = $this->get_response_options_from_request();
+
+		$this->send_ai_response( $ticket_ai_service->improve_reply( $ticket_id, $reply_text, $response_options ), 'reply_improvement' );
 	}
 
 	/**
@@ -305,6 +319,34 @@ final class SCAI_AI_Controller {
 	 */
 	private function get_ticket_id_from_request() {
 		return isset( $_REQUEST['ticket_id'] ) ? absint( wp_unslash( $_REQUEST['ticket_id'] ) ) : 0;
+	}
+
+	/**
+	 * Get sanitized response-writing options from the AJAX request.
+	 *
+	 * @return array{tone: string, length: string, format: string}
+	 */
+	private function get_response_options_from_request() {
+		$defaults = array(
+			'tone'   => 'professional',
+			'length' => 'standard',
+			'format' => 'plain',
+		);
+		$allowed  = array(
+			'tone'   => array( 'professional', 'friendly', 'empathetic', 'concise' ),
+			'length' => array( 'short', 'standard', 'detailed' ),
+			'format' => array( 'plain', 'step_by_step', 'technical' ),
+		);
+
+		foreach ( $defaults as $key => $default ) {
+			$value = isset( $_POST[ $key ] ) && is_scalar( $_POST[ $key ] )
+				? sanitize_key( wp_unslash( (string) $_POST[ $key ] ) )
+				: '';
+
+			$defaults[ $key ] = in_array( $value, $allowed[ $key ], true ) ? $value : $default;
+		}
+
+		return $defaults;
 	}
 
 	/**

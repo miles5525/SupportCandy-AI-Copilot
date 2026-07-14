@@ -59,11 +59,18 @@ final class SCAI_Prompt_Engine {
 	 * @return array<string, mixed>
 	 */
 	public function build_ticket_summary_request( $context_text, array $context = array(), array $args = array() ) {
-		$context_text = $this->normalize_multiline_text( $context_text );
+		$context_text        = $this->normalize_multiline_text( $context_text );
+		$options             = $this->normalize_response_options( $args );
+		$length_instructions = array(
+			'short'    => 'Keep the internal summary compact and focused on the most important facts.',
+			'standard' => 'Use a normal internal support-summary length.',
+			'detailed' => 'Provide a fuller internal summary while remaining factual and relevant.',
+		);
 		$prompt       = implode(
 			"\n",
 			array(
-				'Review the ticket context and return a concise support-agent summary.',
+				'Review the ticket context and return a factual support-agent summary.',
+				$length_instructions[ $options['length'] ],
 				'Include:',
 				'- Short issue summary',
 				'- Customer sentiment',
@@ -109,12 +116,15 @@ final class SCAI_Prompt_Engine {
 	 * @return array<string, mixed>
 	 */
 	public function build_reply_generation_request( $context_text, array $context = array(), array $args = array() ) {
-		$context_text = $this->normalize_multiline_text( $context_text );
-		$prompt       = implode(
+		$context_text       = $this->normalize_multiline_text( $context_text );
+		$style_instructions = $this->build_response_style_instructions( $args );
+		$prompt              = implode(
 			"\n",
 			array(
-				'Write a professional support reply for the ticket.',
-				'Be clear, helpful, and concise.',
+				'Write a support reply for the ticket.',
+				'Be clear and helpful.',
+				'Response style:',
+				$style_instructions,
 				'Avoid making unsupported promises.',
 				'Ask for missing information if needed.',
 				'Use ticket context only.',
@@ -159,13 +169,18 @@ final class SCAI_Prompt_Engine {
 	 * @return array<string, mixed>
 	 */
 	public function build_reply_improvement_request( $reply_text, $context_text = '', array $context = array(), array $args = array() ) {
-		$reply_text   = $this->normalize_multiline_text( $reply_text );
-		$context_text = $this->normalize_multiline_text( $context_text );
-		$prompt_parts = array(
+		$reply_text         = $this->normalize_multiline_text( $reply_text );
+		$context_text       = $this->normalize_multiline_text( $context_text );
+		$style_instructions = $this->build_response_style_instructions( $args );
+		$prompt_parts       = array(
 			'Improve the provided draft reply.',
 			'Keep the original meaning.',
-			'Make it professional, clear, and useful for support.',
+			'Make it clear and useful for support.',
+			'Response style:',
+			$style_instructions,
 			'Avoid adding unsupported facts.',
+			'Do not add unsupported promises or actions.',
+			'If essential information is missing, ask for it rather than guessing.',
 			'Return only the improved reply text.',
 			'',
 			'Draft reply:',
@@ -203,6 +218,107 @@ final class SCAI_Prompt_Engine {
 				)
 			)
 		);
+	}
+
+	/**
+	 * Normalize response-writing options.
+	 *
+	 * @param array<string, mixed> $args Request arguments.
+	 * @return array{tone: string, length: string, format: string}
+	 */
+	private function normalize_response_options( array $args ) {
+		$source = isset( $args['response_options'] ) && is_array( $args['response_options'] )
+			? $args['response_options']
+			: array();
+
+		foreach ( array( 'tone', 'length', 'format' ) as $key ) {
+			if ( isset( $args[ $key ] ) ) {
+				$source[ $key ] = $args[ $key ];
+			}
+		}
+
+		$options = $this->sanitize_response_options( $source );
+
+		/**
+		 * Filter normalized AI response-writing options.
+		 *
+		 * @param array{tone: string, length: string, format: string} $options Normalized options.
+		 * @param array<string, mixed>                               $args    Original request arguments.
+		 */
+		$options = apply_filters( 'scai_prompt_response_options', $options, $args );
+
+		return $this->sanitize_response_options( is_array( $options ) ? $options : array() );
+	}
+
+	/**
+	 * Build prompt instructions for response-writing options.
+	 *
+	 * @param array<string, mixed> $args Request arguments.
+	 * @return string
+	 */
+	private function build_response_style_instructions( array $args ) {
+		$options = $this->normalize_response_options( $args );
+		$tone    = array(
+			'professional' => 'Use a professional and clear support tone.',
+			'friendly'     => 'Use a friendly, warm, and helpful tone.',
+			'empathetic'   => 'Acknowledge the customer\'s frustration and use an empathetic tone.',
+			'concise'      => 'Be concise and direct while still being helpful.',
+		);
+		$length  = array(
+			'short'    => 'Keep the reply short, around 2–4 sentences.',
+			'standard' => 'Use a normal support reply length.',
+			'detailed' => 'Provide a more detailed explanation with useful next steps.',
+		);
+		$format  = array(
+			'plain'        => 'Write a normal customer support reply.',
+			'step_by_step' => 'Use clear steps or bullet points when helpful.',
+			'technical'    => 'Include technical details when useful, but keep them understandable for the customer.',
+		);
+		$instructions = implode(
+			"\n",
+			array(
+				'- ' . $tone[ $options['tone'] ],
+				'- ' . $length[ $options['length'] ],
+				'- ' . $format[ $options['format'] ],
+			)
+		);
+
+		/**
+		 * Filter response style instructions before prompt composition.
+		 *
+		 * @param string                                                    $instructions Style instructions.
+		 * @param array{tone: string, length: string, format: string}       $options      Normalized options.
+		 * @param array<string, mixed>                                      $args         Original request arguments.
+		 */
+		$instructions = apply_filters( 'scai_prompt_style_instructions', $instructions, $options, $args );
+
+		return $this->normalize_multiline_text( $instructions );
+	}
+
+	/**
+	 * Sanitize response option values against their allowlists.
+	 *
+	 * @param array<string, mixed> $options Raw response options.
+	 * @return array{tone: string, length: string, format: string}
+	 */
+	private function sanitize_response_options( array $options ) {
+		$defaults = array(
+			'tone'   => 'professional',
+			'length' => 'standard',
+			'format' => 'plain',
+		);
+		$allowed  = array(
+			'tone'   => array( 'professional', 'friendly', 'empathetic', 'concise' ),
+			'length' => array( 'short', 'standard', 'detailed' ),
+			'format' => array( 'plain', 'step_by_step', 'technical' ),
+		);
+
+		foreach ( $defaults as $key => $default ) {
+			$value           = isset( $options[ $key ] ) && is_scalar( $options[ $key ] ) ? sanitize_key( (string) $options[ $key ] ) : '';
+			$defaults[ $key ] = in_array( $value, $allowed[ $key ], true ) ? $value : $default;
+		}
+
+		return $defaults;
 	}
 
 	/**
