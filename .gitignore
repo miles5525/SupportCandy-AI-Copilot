@@ -1,0 +1,42 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs / debug
+*.log
+debug.log
+error_log
+
+# Environment / secrets
+.env
+.env.*
+*.key
+*.pem
+
+# Archives / backups
+*.zip
+*.tar
+*.gz
+*.rar
+*.bak
+*.backup
+
+# Dependencies / build folders
+node_modules/
+vendor/
+dist/
+build/
+
+# WordPress local/generated files
+wp-content/
+uploads/
+upgrade/
+cache/
+
+# Composer local files if added later
+composer.lock
+
+# npm local files if added later
+package-lock.json

@@ -1,0 +1,197 @@
+#scai-ticket-ai-panel {
+	box-sizing: border-box;
+	max-width: 760px;
+	margin: 16px 0;
+	padding: 16px;
+	border: 1px solid #c3c4c7;
+	border-radius: 6px;
+	background: #fff;
+	color: #1d2327;
+	font-size: 14px;
+	line-height: 1.5;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+#scai-ticket-ai-panel *,
+#scai-ticket-ai-panel *::before,
+#scai-ticket-ai-panel *::after {
+	box-sizing: border-box;
+}
+
+#scai-ticket-ai-panel .scai-ticket-ai-title {
+	margin: 0 0 8px;
+	color: #1d2327;
+	font-size: 18px;
+	font-weight: 600;
+	line-height: 1.3;
+}
+
+#scai-ticket-ai-panel .scai-ticket-ai-status,
+#scai-ticket-ai-panel .scai-ticket-ai-message {
+	margin: 8px 0 12px;
+	color: #50575e;
+}
+
+#scai-ticket-ai-panel .scai-manual-ticket-id-wrap {
+	margin: 12px 0;
+}
+
+#scai-ticket-ai-panel .scai-manual-ticket-id-label,
+#scai-ticket-ai-panel .scai-draft-label {
+	display: block;
+	margin: 0 0 6px;
+	color: #1d2327;
+	font-weight: 600;
+}
+
+#scai-ticket-ai-panel .scai-manual-ticket-id {
+	width: 160px;
+	max-width: 100%;
+	min-height: 34px;
+	padding: 6px 8px;
+	border: 1px solid #8c8f94;
+	border-radius: 4px;
+	background: #fff;
+	color: #1d2327;
+}
+
+#scai-ticket-ai-panel .scai-draft-reply {
+	display: block;
+	width: 100%;
+	min-height: 120px;
+	margin: 0 0 12px;
+	padding: 8px 10px;
+	border: 1px solid #8c8f94;
+	border-radius: 4px;
+	background: #fff;
+	color: #1d2327;
+	font: inherit;
+	resize: vertical;
+}
+
+#scai-ticket-ai-panel .scai-ticket-ai-actions,
+#scai-ticket-ai-panel .scai-result-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin: 12px 0;
+}
+
+#scai-ticket-ai-panel button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 34px;
+	padding: 6px 12px;
+	border: 1px solid #2271b1;
+	border-radius: 4px;
+	background: #2271b1;
+	color: #fff;
+	font: inherit;
+	font-weight: 500;
+	line-height: 1.4;
+	text-decoration: none;
+	cursor: pointer;
+}
+
+#scai-ticket-ai-panel button:hover,
+#scai-ticket-ai-panel button:focus {
+	border-color: #135e96;
+	background: #135e96;
+	color: #fff;
+}
+
+#scai-ticket-ai-panel button:focus {
+	outline: 2px solid #72aee6;
+	outline-offset: 2px;
+}
+
+#scai-ticket-ai-panel button:disabled {
+	border-color: #c3c4c7;
+	background: #f0f0f1;
+	color: #8c8f94;
+	cursor: default;
+}
+
+#scai-ticket-ai-panel .scai-improve-draft,
+#scai-ticket-ai-panel .scai-copy-result,
+#scai-ticket-ai-panel .scai-insert-result {
+	border-color: #8c8f94;
+	background: #f6f7f7;
+	color: #1d2327;
+}
+
+#scai-ticket-ai-panel .scai-improve-draft:hover,
+#scai-ticket-ai-panel .scai-improve-draft:focus,
+#scai-ticket-ai-panel .scai-copy-result:hover,
+#scai-ticket-ai-panel .scai-copy-result:focus,
+#scai-ticket-ai-panel .scai-insert-result:hover,
+#scai-ticket-ai-panel .scai-insert-result:focus {
+	border-color: #2271b1;
+	background: #fff;
+	color: #135e96;
+}
+
+#scai-ticket-ai-panel .scai-ticket-ai-output {
+	display: block;
+	width: 100%;
+	min-height: 96px;
+	max-height: 420px;
+	margin: 12px 0;
+	padding: 12px;
+	overflow: auto;
+	border: 1px solid #dcdcde;
+	border-radius: 4px;
+	background: #f6f7f7;
+	color: #1d2327;
+	font-family: Consolas, Monaco, monospace;
+	font-size: 13px;
+	line-height: 1.5;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+#scai-ticket-ai-panel .scai-is-loading {
+	border-color: #72aee6;
+	background: #f0f6fc;
+	color: #1d2327;
+}
+
+#scai-ticket-ai-panel .scai-has-result {
+	border-color: #c3c4c7;
+	background: #fff;
+}
+
+#scai-ticket-ai-panel .scai-has-error,
+#scai-ticket-ai-panel .scai-message-error {
+	border-color: #d63638;
+	background: #fcf0f1;
+	color: #8a2424;
+}
+
+#scai-ticket-ai-panel .scai-message-success {
+	color: #0a6b2b;
+}
+
+#scai-ticket-ai-panel .scai-ticket-ai-message {
+	padding: 0;
+	font-size: 13px;
+}
+
+@media (max-width: 600px) {
+	#scai-ticket-ai-panel {
+		max-width: none;
+		padding: 12px;
+	}
+
+	#scai-ticket-ai-panel .scai-ticket-ai-actions,
+	#scai-ticket-ai-panel .scai-result-actions {
+		display: grid;
+		grid-template-columns: 1fr;
+	}
+
+	#scai-ticket-ai-panel button,
+	#scai-ticket-ai-panel .scai-manual-ticket-id {
+		width: 100%;
+	}
+}
