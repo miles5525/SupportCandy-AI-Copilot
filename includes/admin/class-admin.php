@@ -19,7 +19,7 @@ final class SCAI_Admin {
 	 *
 	 * @var string
 	 */
-	const MENU_SLUG = 'scai-settings';
+	const MENU_SLUG = 'scai-getting-started';
 
 	/**
 	 * Required capability for accessing plugin admin pages.
@@ -134,7 +134,7 @@ final class SCAI_Admin {
 			esc_html__( 'SupportCandy AI', 'supportcandy-ai' ),
 			self::CAPABILITY,
 			self::MENU_SLUG,
-			array( $this, 'render_settings_page' ),
+			array( $this, 'render_getting_started_page' ),
 			'dashicons-format-chat',
 			56
 		);
@@ -153,7 +153,7 @@ final class SCAI_Admin {
 			esc_html__( 'SupportCandy AI Settings', 'supportcandy-ai' ),
 			esc_html__( 'Settings', 'supportcandy-ai' ),
 			self::CAPABILITY,
-			self::MENU_SLUG,
+			'scai-settings',
 			array( $this, 'render_settings_page' )
 		);
 
