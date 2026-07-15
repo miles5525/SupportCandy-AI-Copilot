@@ -1,0 +1,178 @@
+=== SupportCandy AI Assistant ===
+Contributors: webizons
+Tags: supportcandy, ai, support, tickets, helpdesk, openai, betterdocs
+Requires at least: 6.0
+Tested up to: 7.0.1
+Requires PHP: 7.4
+Stable tag: 0.9.1
+License: GPLv2 or later
+License URI: https://www.gnu.org/licenses/gpl-2.0.html
+
+AI-assisted ticket summaries, reply drafting, and optional BetterDocs knowledge for SupportCandy helpdesks.
+
+== Description ==
+
+SupportCandy AI Assistant adds agent-controlled AI tools to a SupportCandy helpdesk. It can summarize ticket conversations, draft customer replies, improve an existing draft, and merge an agent's draft with an AI suggestion.
+
+This is independent beta software. It is not an official SupportCandy product and is not developed, endorsed, or supported by the official SupportCandy team.
+
+AI actions run only when an authorized support agent requests them. The plugin does not automatically submit or send ticket replies. Agents should review every AI-generated summary and reply before relying on or sending it.
+
+== Features ==
+
+* Generate an internal AI summary of ticket context.
+* Generate a customer-facing reply draft.
+* Improve the current agent draft while preserving its intent.
+* Merge an agent draft with an AI suggestion.
+* Apply, replace, append, or merge generated text without automatically submitting a reply.
+* View agent-scoped AI conversation history.
+* Review AI usage logs without storing raw prompts.
+* Control AI access by SupportCandy agent role and ticket access.
+* Read bounded excerpts from supported text and log attachments.
+* Optionally include supported images for AI visual inspection.
+* Optionally use relevant published BetterDocs articles as supporting knowledge.
+* Run system checks for SupportCandy, attachments, image support, and BetterDocs availability.
+
+== Requirements ==
+
+* WordPress 6.0 or later.
+* PHP 7.4 or later.
+* An active and compatible SupportCandy installation.
+* A configured AI service that provides an OpenAI-compatible API.
+* An API key and model access from the chosen AI service.
+* BetterDocs is optional and required only for BetterDocs knowledge features.
+
+Compatibility can vary between WordPress, SupportCandy, BetterDocs, and AI provider versions. Test beta releases on a staging site before production use.
+
+== Supported AI Providers ==
+
+The beta includes configurable support for OpenAI-compatible chat-completion endpoints. Administrators can configure the endpoint, API key, and model in the provider settings and test the connection before use.
+
+Compatibility with a service depends on how closely its API follows the expected OpenAI-compatible request and response format. A compatible endpoint does not imply endorsement or official integration by that provider.
+
+== BetterDocs Knowledge Base ==
+
+The optional BetterDocs integration searches published, publicly viewable, non-password-protected documentation and supplies a bounded set of relevant articles as supporting AI context.
+
+When relevant articles are found:
+
+* Summaries can list short Suggested Knowledge References.
+* Replies, improved drafts, and merged drafts can use relevant troubleshooting guidance.
+* Ticket and customer facts remain the primary source of truth.
+
+The integration is read-only. It does not modify BetterDocs content, write BetterDocs search analytics, or retrieve draft, private, or password-protected articles.
+
+== Image Understanding ==
+
+Image understanding is optional and disabled by default for new installations. When enabled and supported by the configured provider, selected ticket images may be included in the AI request for visual inspection.
+
+Image support depends on the selected model and provider. Agents should verify visual descriptions. The plugin does not store base64 image data in conversation history or usage logs.
+
+== Privacy and Data ==
+
+When an authorized agent uses an AI action, relevant ticket content may be sent to the configured AI provider. Depending on the request, this can include ticket fields, conversation messages, bounded text attachment excerpts, selected images, and relevant public BetterDocs content.
+
+Important privacy considerations:
+
+* API keys are stored in WordPress options. Protect administrator access and the WordPress database.
+* The plugin does not train AI models itself.
+* The plugin does not automatically send or submit ticket replies.
+* Raw prompts are not stored in usage logs.
+* Base64 image data and local server paths are not stored in AI history or usage logs.
+* BetterDocs knowledge reads only published, public, non-password-protected articles.
+* Conversation history is scoped to the current agent and subject to configured retention controls.
+* The site owner is responsible for the configured AI provider's terms, privacy policy, data retention, regional requirements, and legal compliance.
+
+Review your provider configuration and privacy obligations before enabling AI features on a production helpdesk.
+
+== Installation ==
+
+1. Back up the WordPress site and test on staging first.
+2. Install and activate SupportCandy.
+3. Upload the SupportCandy AI Assistant ZIP through Plugins > Add New > Upload Plugin, or copy the plugin directory into `/wp-content/plugins/`.
+4. Activate SupportCandy AI Assistant.
+5. Open the SupportCandy AI settings pages and configure the provider, permissions, and optional features.
+6. Run System Check before using AI actions on live tickets.
+
+== Configuration ==
+
+1. Open the AI provider settings and configure an OpenAI-compatible endpoint, API key, and model.
+2. Test the provider connection.
+3. Open AI Permissions and select the SupportCandy agent roles allowed to use AI features.
+4. Review conversation retention and uninstall cleanup settings.
+5. Optionally enable image understanding after confirming that the model supports images.
+6. Optionally install and activate BetterDocs, publish documentation, and enable BetterDocs knowledge.
+7. Use System Check to verify ticket access, attachments, images, and BetterDocs detection.
+
+== Frequently Asked Questions ==
+
+= Is this an official SupportCandy plugin? =
+
+No. SupportCandy AI Assistant is an independent plugin and is not developed, endorsed, or supported by the official SupportCandy team.
+
+= Does the plugin automatically send replies? =
+
+No. It prepares text for the reply editor. A support agent must review and manually submit the final reply.
+
+= Which AI providers can I use? =
+
+The beta supports configurable OpenAI-compatible endpoints. Actual compatibility depends on the provider's API and selected model.
+
+= Is ticket information sent to an external service? =
+
+Yes, when an authorized agent runs an AI action, relevant ticket context may be sent to the configured AI provider. Review the Privacy and Data section and your provider's policies.
+
+= Does the plugin train an AI model with my tickets? =
+
+The plugin does not train models. The configured provider may process or retain requests according to its own terms and privacy policy.
+
+= Is BetterDocs required? =
+
+No. BetterDocs is optional. If it is unavailable or BetterDocs knowledge is disabled, the existing ticket AI features continue without documentation context.
+
+= Which BetterDocs articles can be used? =
+
+Only published, publicly viewable, non-password-protected articles are eligible. The integration is read-only.
+
+= Is image understanding enabled automatically? =
+
+No. It is disabled by default for new installations and must be enabled by an administrator. The configured model must also support image input.
+
+= Should agents trust AI output without review? =
+
+No. AI output can be incomplete or incorrect. Agents should verify facts, troubleshooting steps, policies, links, and customer-facing language before use.
+
+= Is this release production ready? =
+
+Version 0.9.1 is beta software. It has been private-beta tested, but site owners should use staging, backups, limited permissions, and careful monitoring before production deployment.
+
+== Screenshots ==
+
+1. SupportCandy AI Assistant settings and optional feature controls.
+2. OpenAI-compatible provider configuration and connection test.
+3. SupportCandy agent-role AI permissions.
+4. AI assistant actions in a SupportCandy ticket.
+5. AI conversation history popup.
+6. System Check with attachment, image, and BetterDocs diagnostics.
+7. Usage Logs administration page.
+
+== Changelog ==
+
+= 0.9.1 =
+
+* Added BetterDocs Knowledge Base MVP.
+* Added BetterDocs detection and search diagnostics.
+* Added Suggested Knowledge References in summaries.
+* Improved AI reply formatting to avoid subject lines and placeholder signatures.
+* Improved BetterDocs-guided replies, improve draft, and merge draft flows.
+* Added final private beta hardening.
+
+= 0.9.0 =
+
+* Initial private beta with AI ticket summary, reply generation, reply improvement, merge draft, conversation history, usage logs, permissions, image understanding, and attachment context.
+
+== Upgrade Notice ==
+
+= 0.9.1 =
+
+Adds optional BetterDocs knowledge, knowledge diagnostics, explicit summary references, and improved customer-reply formatting. Back up the site and verify provider, permissions, and optional feature settings after upgrading.
