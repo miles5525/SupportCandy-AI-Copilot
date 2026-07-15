@@ -149,14 +149,15 @@ final class SCAI_Uninstaller {
 	 * @return void
 	 */
 	private static function load_dependencies() {
-		if ( class_exists( 'SCAI_Schema' ) ) {
-			return;
+		$schema_file = dirname( __DIR__ ) . '/database/class-schema.php';
+		$settings_file = dirname( __DIR__ ) . '/services/class-settings.php';
+
+		if ( ! class_exists( 'SCAI_Schema' ) && is_readable( $schema_file ) ) {
+			require_once $schema_file;
 		}
 
-		$schema_file = dirname( __DIR__ ) . '/database/class-schema.php';
-
-		if ( is_readable( $schema_file ) ) {
-			require_once $schema_file;
+		if ( ! class_exists( 'SCAI_Settings' ) && is_readable( $settings_file ) ) {
+			require_once $settings_file;
 		}
 	}
 
@@ -248,21 +249,62 @@ final class SCAI_Uninstaller {
 	 * @return array<string, bool>
 	 */
 	private static function delete_options() {
-		$options = array(
-			self::OPTION_DELETE_DATA_ON_UNINSTALL,
-			self::OPTION_SCHEMA_VERSION,
-			self::OPTION_INSTALLED_AT,
-			self::OPTION_CONVERSATION_RETENTION_DAYS,
-		);
-
 		$results = array();
 
-		foreach ( $options as $option_name ) {
+		foreach ( self::get_option_keys_to_delete() as $option_name ) {
 			$option_name             = sanitize_key( $option_name );
 			$results[ $option_name ] = delete_option( $option_name );
 		}
 
+		// Clear the known plugin migration lock without scanning unrelated transients.
+		delete_transient( 'scai_database_migration_lock' );
+
 		return $results;
+	}
+
+	/**
+	 * Get the explicit list of plugin-owned options removed during destructive uninstall.
+	 *
+	 * Provider configurations are intentionally included because they may contain
+	 * API credentials. This list never includes SupportCandy or WordPress options.
+	 *
+	 * @return array<int, string>
+	 */
+	private static function get_option_keys_to_delete() {
+		/*
+		 * Keep a complete fallback for uninstall contexts where optional runtime
+		 * services cannot be loaded.
+		 */
+		$option_keys = array(
+			self::OPTION_SCHEMA_VERSION,
+			self::OPTION_INSTALLED_AT,
+			self::OPTION_CONVERSATION_RETENTION_DAYS,
+			self::OPTION_DELETE_DATA_ON_UNINSTALL,
+			'scai_active_provider',
+			'scai_company_instructions',
+			'scai_image_understanding_enabled',
+			'scai_knowledge_sync_enabled',
+			'scai_last_knowledge_sync_at',
+			'scai_provider_configs',
+			'scai_allowed_supportcandy_role_ids',
+		);
+
+		if ( class_exists( 'SCAI_Settings' ) && method_exists( 'SCAI_Settings', 'get_option_names' ) ) {
+			$registered_options = SCAI_Settings::get_option_names();
+
+			if ( is_array( $registered_options ) ) {
+				$option_keys = array_merge( $option_keys, array_values( $registered_options ) );
+			}
+		}
+
+		$option_keys = array_filter(
+			array_map( 'sanitize_key', $option_keys ),
+			static function ( $option_key ) {
+				return is_string( $option_key ) && 0 === strpos( $option_key, 'scai_' );
+			}
+		);
+
+		return array_values( array_unique( $option_keys ) );
 	}
 
 	/**

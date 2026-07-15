@@ -288,6 +288,19 @@ final class SCAI_AI_Controller {
 			);
 		}
 
+		// Conversation agent_id uses the WordPress user ID used during persistence.
+		$current_agent_id = get_current_user_id();
+
+		if ( ! $current_agent_id ) {
+			wp_send_json_error(
+				array(
+					'code'    => 'invalid_agent',
+					'message' => __( 'Unable to identify the current SupportCandy agent.', 'supportcandy-ai' ),
+				),
+				403
+			);
+		}
+
 		$limit = isset( $_REQUEST['limit'] ) ? absint( wp_unslash( $_REQUEST['limit'] ) ) : 10;
 		$limit = 0 < $limit ? min( 25, $limit ) : 10;
 
@@ -299,7 +312,7 @@ final class SCAI_AI_Controller {
 
 		try {
 			$repository = new SCAI_Conversation_Repository();
-			$records    = $repository->get_by_ticket( $ticket_id, array( 'limit' => $limit ) );
+			$records    = $repository->get_by_ticket_for_agent( $ticket_id, $current_agent_id, array( 'limit' => $limit ) );
 		} catch ( Throwable $exception ) {
 			wp_send_json_error( $this->build_error_response_data( 'conversation_history_unavailable', __( 'AI conversation history is unavailable.', 'supportcandy-ai' ), $feature ), 500 );
 		}
@@ -381,7 +394,8 @@ final class SCAI_AI_Controller {
 			return (bool) $permissions->current_user_can_use_ai( $ticket_id, $feature );
 		}
 
-		return current_user_can( self::CAPABILITY );
+		// Fail closed when centralized SupportCandy authorization is unavailable.
+		return false;
 	}
 
 	/**
@@ -431,16 +445,13 @@ final class SCAI_AI_Controller {
 		$feature = isset( $record['feature'] ) ? sanitize_key( $record['feature'] ) : '';
 
 		return array(
-			'id'              => isset( $record['id'] ) ? absint( $record['id'] ) : 0,
-			'conversation_id' => isset( $record['conversation_id'] ) ? sanitize_text_field( $record['conversation_id'] ) : '',
-			'role'            => isset( $record['role'] ) ? sanitize_key( $record['role'] ) : '',
-			'feature'         => $feature,
-			'feature_label'   => $this->get_feature_label( $feature ),
-			'content'         => isset( $record['content'] ) ? wp_kses_post( $record['content'] ) : '',
-			'provider'        => isset( $record['provider'] ) ? sanitize_text_field( $record['provider'] ) : '',
-			'model'           => isset( $record['model'] ) ? sanitize_text_field( $record['model'] ) : '',
-			'tokens'          => isset( $record['tokens'] ) ? absint( $record['tokens'] ) : 0,
-			'created_at'      => isset( $record['created_at'] ) ? sanitize_text_field( $record['created_at'] ) : '',
+			'id'         => isset( $record['id'] ) ? absint( $record['id'] ) : 0,
+			'feature'    => $feature,
+			'content'    => isset( $record['content'] ) ? wp_kses_post( $record['content'] ) : '',
+			'provider'   => isset( $record['provider'] ) ? sanitize_text_field( $record['provider'] ) : '',
+			'model'      => isset( $record['model'] ) ? sanitize_text_field( $record['model'] ) : '',
+			'tokens'     => isset( $record['tokens'] ) ? absint( $record['tokens'] ) : 0,
+			'created_at' => isset( $record['created_at'] ) ? sanitize_text_field( $record['created_at'] ) : '',
 		);
 	}
 

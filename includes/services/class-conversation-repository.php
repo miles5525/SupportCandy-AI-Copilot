@@ -106,6 +106,8 @@ final class SCAI_Conversation_Repository {
 	 * @return array<int, array<string, mixed>>
 	 */
 	public function get_by_ticket( $ticket_id, array $args = array() ) {
+		global $wpdb;
+
 		$database  = $this->get_database();
 		$ticket_id = absint( $ticket_id );
 
@@ -123,33 +125,48 @@ final class SCAI_Conversation_Repository {
 				'offset'         => 0,
 			)
 		);
-		$where = array( 'ticket_id' => $ticket_id );
+		$table_name = $database->get_table_name( self::TABLE_KEY );
+		if ( '' === $table_name ) {
+			return array();
+		}
+
+		$where_sql    = array( '`ticket_id` = %d' );
+		$where_values = array( $ticket_id );
 
 		if ( 0 < absint( $args['agent_id'] ) ) {
-			$where['agent_id'] = absint( $args['agent_id'] );
+			$where_sql[]    = '`agent_id` = %d';
+			$where_values[] = absint( $args['agent_id'] );
 		}
 
 		if ( '' !== sanitize_key( $args['feature'] ) ) {
-			$where['feature'] = sanitize_key( $args['feature'] );
+			$where_sql[]    = '`feature` = %s';
+			$where_values[] = sanitize_key( $args['feature'] );
 		}
 
 		$conversation_id = $this->sanitize_conversation_id( $args['conversation_id'], false );
 
 		if ( '' !== $conversation_id ) {
-			$where['conversation_id'] = $conversation_id;
+			$where_sql[]    = '`conversation_id` = %s';
+			$where_values[] = $conversation_id;
 		}
 
-		$rows = $database->get_results(
-			self::TABLE_KEY,
-			array(
-				'where'   => $where,
-				'orderby' => 'id',
-				'order'   => 'DESC',
-				'limit'   => min( 100, max( 1, absint( $args['limit'] ) ) ),
-				'offset'  => absint( $args['offset'] ),
-			),
-			ARRAY_A
-		);
+		/*
+		 * Enforce retention at read time so privacy does not depend on WP-Cron
+		 * running promptly.
+		 */
+		$where_sql[]    = '(`expires_at` IS NULL OR `expires_at` = %s OR `expires_at` = %s OR `expires_at` > %s)';
+		$where_values[] = '';
+		$where_values[] = '0000-00-00 00:00:00';
+		$where_values[] = current_time( 'mysql', true );
+
+		$limit          = min( 100, max( 1, absint( $args['limit'] ) ) );
+		$offset         = absint( $args['offset'] );
+		$where_values[] = $limit;
+		$where_values[] = $offset;
+		$sql            = "SELECT * FROM `{$table_name}` WHERE " . implode( ' AND ', $where_sql ) . ' ORDER BY `id` DESC LIMIT %d OFFSET %d';
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is supplied by the plugin schema and all dynamic values are prepared.
+		$rows = $wpdb->get_results( $wpdb->prepare( $sql, $where_values ), ARRAY_A );
 
 		$records = array();
 
@@ -162,6 +179,30 @@ final class SCAI_Conversation_Repository {
 		}
 
 		return $records;
+	}
+
+	/**
+	 * Get recent conversation records for one ticket and agent.
+	 *
+	 * User-facing history is intentionally scoped to the current agent. Unscoped
+	 * legacy rows are not returned.
+	 *
+	 * @param int                  $ticket_id Ticket ID.
+	 * @param int                  $agent_id  WordPress user ID stored as the agent identity.
+	 * @param array<string, mixed> $args      Query arguments.
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function get_by_ticket_for_agent( $ticket_id, $agent_id, array $args = array() ) {
+		$ticket_id = absint( $ticket_id );
+		$agent_id  = absint( $agent_id );
+
+		if ( ! $ticket_id || ! $agent_id ) {
+			return array();
+		}
+
+		$args['agent_id'] = $agent_id;
+
+		return $this->get_by_ticket( $ticket_id, $args );
 	}
 
 	/**
@@ -196,6 +237,8 @@ final class SCAI_Conversation_Repository {
 	 * @return int
 	 */
 	public function get_count_by_ticket( $ticket_id ) {
+		global $wpdb;
+
 		$database  = $this->get_database();
 		$ticket_id = absint( $ticket_id );
 
@@ -203,15 +246,27 @@ final class SCAI_Conversation_Repository {
 			return 0;
 		}
 
-		return $database->get_count( self::TABLE_KEY, array( 'ticket_id' => $ticket_id ) );
+		$table_name = $database->get_table_name( self::TABLE_KEY );
+		if ( '' === $table_name ) {
+			return 0;
+		}
+
+		$current_time = current_time( 'mysql', true );
+		$sql          = "SELECT COUNT(*) FROM `{$table_name}` WHERE `ticket_id` = %d AND (`expires_at` IS NULL OR `expires_at` = %s OR `expires_at` = %s OR `expires_at` > %s)";
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is supplied by the plugin schema and all dynamic values are prepared.
+		$count = $wpdb->get_var( $wpdb->prepare( $sql, $ticket_id, '', '0000-00-00 00:00:00', $current_time ) );
+
+		return absint( $count );
 	}
 
 	/**
 	 * Delete expired conversation records.
 	 *
+	 * @param int $limit Maximum rows to delete in one run.
 	 * @return int|false Number of deleted rows, or false on failure.
 	 */
-	public function delete_expired() {
+	public function delete_expired( $limit = 500 ) {
 		global $wpdb;
 
 		$database = $this->get_database();
@@ -226,11 +281,13 @@ final class SCAI_Conversation_Repository {
 			return false;
 		}
 
-		$current_time = current_time( 'mysql', true );
-		$sql          = "DELETE FROM `{$table_name}` WHERE `expires_at` IS NOT NULL AND `expires_at` < %s";
+		$limit = min( 1000, max( 1, absint( $limit ) ) );
 
-		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is supplied by SCAI_Schema through SCAI_Database; date is prepared.
-		return $wpdb->query( $wpdb->prepare( $sql, $current_time ) );
+		$current_time = current_time( 'mysql', true );
+		$sql          = "DELETE FROM `{$table_name}` WHERE `expires_at` IS NOT NULL AND `expires_at` <> %s AND `expires_at` <> %s AND `expires_at` <= %s LIMIT %d";
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is supplied by SCAI_Schema through SCAI_Database; all dynamic values are prepared.
+		return $wpdb->query( $wpdb->prepare( $sql, '', '0000-00-00 00:00:00', $current_time, $limit ) );
 	}
 
 	/**

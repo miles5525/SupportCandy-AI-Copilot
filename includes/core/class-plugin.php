@@ -52,6 +52,7 @@ if ( ! class_exists( 'SCAI_Plugin' ) ) {
 		private function init_hooks() {
 
 			add_action( 'plugins_loaded', array( $this, 'plugins_loaded' ) );
+			add_action( 'scai_daily_conversation_cleanup', array( $this, 'cleanup_expired_conversations' ) );
 
 		}
 
@@ -70,6 +71,42 @@ if ( ! class_exists( 'SCAI_Plugin' ) ) {
 
 			$this->maybe_migrate_database();
 			$this->load_components();
+			$this->maybe_schedule_conversation_cleanup();
+		}
+
+		/**
+		 * Schedule best-effort storage cleanup without creating duplicate events.
+		 *
+		 * Read-time filtering remains the privacy boundary if WP-Cron is delayed.
+		 *
+		 * @return void
+		 */
+		private function maybe_schedule_conversation_cleanup() {
+
+			if ( wp_next_scheduled( 'scai_daily_conversation_cleanup' ) ) {
+				return;
+			}
+
+			wp_schedule_event( time() + HOUR_IN_SECONDS, 'daily', 'scai_daily_conversation_cleanup' );
+		}
+
+		/**
+		 * Delete one batch of expired plugin-owned conversation records.
+		 *
+		 * @return void
+		 */
+		public function cleanup_expired_conversations() {
+
+			if ( ! class_exists( 'SCAI_Conversation_Repository' ) ) {
+				return;
+			}
+
+			try {
+				$repository = new SCAI_Conversation_Repository();
+				$repository->delete_expired();
+			} catch ( Throwable $exception ) {
+				// Cleanup is best-effort and must never interrupt a request.
+			}
 		}
 
 		/**

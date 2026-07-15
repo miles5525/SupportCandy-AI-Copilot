@@ -290,7 +290,7 @@ final class SCAI_Settings_Page {
 								<?php echo esc_html__( 'Enable visual inspection of supported image attachments.', 'supportcandy-ai' ); ?>
 							</label>
 							<p class="description">
-								<?php echo esc_html__( 'When enabled, eligible JPG, PNG, WebP, and GIF attachments can be visually inspected during summaries and replies when the active provider and model support vision. Image data is used only for the AI request and is not stored in usage logs or conversation history.', 'supportcandy-ai' ); ?>
+								<?php echo esc_html__( 'When enabled, eligible image attachments can be visually inspected by the active AI provider during summaries and replies. This may send image content to the configured AI provider. Keep this disabled unless your site is allowed to share ticket image attachments with the provider. Image data is used only for the AI request and is not stored in usage logs or conversation history.', 'supportcandy-ai' ); ?>
 							</p>
 						</td>
 					</tr>

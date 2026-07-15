@@ -132,7 +132,7 @@ final class SCAI_Settings {
 			),
 			'image_understanding_enabled'     => array(
 				'option'   => self::OPTION_IMAGE_UNDERSTANDING_ENABLED,
-				'default'  => 1,
+				'default'  => 0,
 				'type'     => 'boolean',
 				'autoload' => false,
 			),

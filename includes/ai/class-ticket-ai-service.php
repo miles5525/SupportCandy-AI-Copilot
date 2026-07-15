@@ -783,6 +783,12 @@ final class SCAI_Ticket_AI_Service {
 			return;
 		}
 
+		// Conversation agent_id consistently stores the WordPress user ID.
+		$current_agent_id = get_current_user_id();
+		if ( ! $current_agent_id ) {
+			return;
+		}
+
 		$ticket_context   = isset( $context['context'] ) && is_array( $context['context'] ) ? $context['context'] : array();
 		$stats            = isset( $ticket_context['stats'] ) && is_array( $ticket_context['stats'] ) ? $ticket_context['stats'] : array();
 		$context_hash     = isset( $context['context_hash'] ) ? $context['context_hash'] : '';
@@ -824,7 +830,7 @@ final class SCAI_Ticket_AI_Service {
 		try {
 			$saved = $this->conversation_repository->create_assistant_message(
 				absint( $ticket_id ),
-				get_current_user_id(),
+				$current_agent_id,
 				sanitize_key( $feature ),
 				$content,
 				$conversation_args
