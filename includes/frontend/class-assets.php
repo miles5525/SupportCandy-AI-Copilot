@@ -241,7 +241,7 @@ final class SCAI_Frontend_Assets {
 	 * @return string
 	 */
 	private function get_asset_version() {
-		return defined( 'SCAI_VERSION' ) ? SCAI_VERSION : '1.0.0';
+		return defined( 'SCAI_VERSION' ) ? SCAI_VERSION : '0.9.1';
 	}
 
 	/**

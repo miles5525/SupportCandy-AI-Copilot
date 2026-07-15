@@ -234,7 +234,7 @@ final class SCAI_Admin_Assets {
 	 * @return string
 	 */
 	private function get_asset_version( $relative_path = '' ) {
-		$version       = defined( 'SCAI_VERSION' ) ? SCAI_VERSION : '1.0.0';
+		$version       = defined( 'SCAI_VERSION' ) ? SCAI_VERSION : '0.9.1';
 		$relative_path = ltrim( sanitize_text_field( (string) $relative_path ), '/' );
 
 		if ( '' !== $relative_path && defined( 'SCAI_PLUGIN_PATH' ) ) {

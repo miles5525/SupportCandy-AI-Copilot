@@ -3,7 +3,7 @@
  * Plugin Name: SupportCandy AI Assistant
  * Plugin URI: https://github.com/
  * Description: A standalone AI Assistant plugin for SupportCandy with support for OpenAI, Gemini, and OpenAI-compatible providers.
- * Version: 1.0.0
+ * Version: 0.9.1
  * Author: OmTech Systems
  * Author URI: https://omtechsystems.com
  * License: GPL v2 or later
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Plugin Version
  */
-define( 'SCAI_VERSION', '1.0.0' );
+define( 'SCAI_VERSION', '0.9.1' );
 
 /**
  * Plugin File
