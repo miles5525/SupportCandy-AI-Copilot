@@ -51,6 +51,14 @@ Frontend/Backend Popup
 - AI Permissions page
 - System Check page
 - Usage Logs page
+- BetterDocs Knowledge Base MVP complete
+- BetterDocs setting and safe read-only public document adapter
+- Deterministic BetterDocs Knowledge Search Service
+- BetterDocs detection and knowledge search tests in System Check
+- BetterDocs guidance in AI Summary, AI Reply, Improve Current Draft, and Merge with my draft
+- Suggested Knowledge References in summaries when relevant documents are included
+- Reply body formatting without generated subject lines or placeholder signatures
+- BetterDocs integration hardening review complete
 
 ## Security Rules
 - WordPress administrator must not bypass SupportCandy AI access rules.
@@ -103,11 +111,12 @@ http://localhost/supportcandy-ai-test/wp-admin/admin.php?page=scai-diagnostics
 Usage Logs:
 http://localhost/supportcandy-ai-test/wp-admin/admin.php?page=scai-usage-logs
 
+## Current Product Status
+BetterDocs Knowledge Base MVP: COMPLETE
+
+The plugin is ready for the next private beta package.
+
 ## Next Product Phase
-BetterDocs Knowledge Base MVP:
-- Detect BetterDocs.
-- Read published BetterDocs articles.
-- Search relevant docs from ticket context.
-- Inject top matching docs into AI context.
-- Add setting to enable BetterDocs knowledge.
-- AI should use docs only when relevant.
+- Create the next private beta ZIP.
+- Run a clean install and upgrade test using the ZIP.
+- Continue with UI polish and public beta preparation after package verification.
