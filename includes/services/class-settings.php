@@ -67,6 +67,13 @@ final class SCAI_Settings {
 	const OPTION_IMAGE_UNDERSTANDING_ENABLED = 'scai_image_understanding_enabled';
 
 	/**
+	 * BetterDocs knowledge enabled option name.
+	 *
+	 * @var string
+	 */
+	const OPTION_ENABLE_BETTERDOCS_KB = 'scai_enable_betterdocs_kb';
+
+	/**
 	 * Knowledge sync enabled option name.
 	 *
 	 * @var string
@@ -134,6 +141,14 @@ final class SCAI_Settings {
 				'option'   => self::OPTION_IMAGE_UNDERSTANDING_ENABLED,
 				'default'  => 0,
 				'type'     => 'boolean',
+				'autoload' => false,
+			),
+			'enable_betterdocs_kb'            => array(
+				'option'   => self::OPTION_ENABLE_BETTERDOCS_KB,
+				'default'  => 0,
+				'type'     => 'boolean',
+				'label'    => __( 'Enable BetterDocs knowledge', 'supportcandy-ai' ),
+				'help'     => __( 'When enabled, SupportCandy AI Assistant can search published, non-password-protected BetterDocs articles and use relevant documentation as context for AI summaries and replies. BetterDocs content is read-only and is not modified.', 'supportcandy-ai' ),
 				'autoload' => false,
 			),
 			'knowledge_sync_enabled'          => array(

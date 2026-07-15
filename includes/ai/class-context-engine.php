@@ -50,6 +50,20 @@ final class SCAI_Context_Engine {
 	const MAX_CONTEXT_ATTACHMENTS = 10;
 
 	/**
+	 * Maximum BetterDocs articles included in context.
+	 *
+	 * @var int
+	 */
+	const MAX_KNOWLEDGE_DOCUMENTS = 3;
+
+	/**
+	 * Maximum combined BetterDocs content characters.
+	 *
+	 * @var int
+	 */
+	const MAX_KNOWLEDGE_CONTENT_LENGTH = 12000;
+
+	/**
 	 * Build compact AI-ready ticket context.
 	 *
 	 * @param array<string, mixed> $ticket_context Normalized ticket context from adapter.
@@ -83,6 +97,9 @@ final class SCAI_Context_Engine {
 			'ticket'       => $ticket,
 			'threads'      => $this->limit_context_size( $ticket, $threads, $attachments, $args ),
 			'attachments'  => $attachments,
+			'knowledge_base' => isset( $ticket_context['knowledge_base'] ) && is_array( $ticket_context['knowledge_base'] )
+				? $this->sanitize_knowledge_base( $ticket_context['knowledge_base'] )
+				: array(),
 			'stats'        => array(
 				'thread_count'               => count( $threads ),
 				'attachment_count'           => $attachment_count,
@@ -710,7 +727,123 @@ final class SCAI_Context_Engine {
 			$lines[] = $body;
 		}
 
+		$knowledge_text = $this->build_knowledge_context_text(
+			isset( $context['knowledge_base'] ) && is_array( $context['knowledge_base'] ) ? $context['knowledge_base'] : array()
+		);
+
+		if ( '' !== $knowledge_text ) {
+			$lines[] = '';
+			$lines[] = $knowledge_text;
+		}
+
 		return implode( "\n", $lines );
+	}
+
+	/**
+	 * Build a separate readable BetterDocs knowledge section.
+	 *
+	 * @param array<string, mixed> $knowledge Knowledge context.
+	 * @return string
+	 */
+	private function build_knowledge_context_text( array $knowledge ) {
+		$documents = isset( $knowledge['documents'] ) && is_array( $knowledge['documents'] ) ? $knowledge['documents'] : array();
+
+		if ( empty( $documents ) ) {
+			return '';
+		}
+
+		$lines = array( 'Knowledge Base Articles:' );
+
+		foreach ( array_slice( $documents, 0, self::MAX_KNOWLEDGE_DOCUMENTS ) as $index => $document ) {
+			if ( ! is_array( $document ) ) {
+				continue;
+			}
+
+			$lines[] = '';
+			$lines[] = ( $index + 1 ) . '. ' . ( isset( $document['title'] ) ? $this->normalize_text( $document['title'] ) : '' );
+			$lines[] = 'Source: BetterDocs';
+			$lines[] = 'URL: ' . ( isset( $document['url'] ) ? esc_url_raw( $document['url'] ) : '' );
+			$lines[] = 'Categories: ' . $this->format_knowledge_list( isset( $document['categories'] ) ? $document['categories'] : array() );
+			$lines[] = 'Relevance score: ' . ( isset( $document['score'] ) && is_numeric( $document['score'] ) ? (string) (float) $document['score'] : '0' );
+			$lines[] = 'Matched terms: ' . $this->format_knowledge_list( isset( $document['matched_terms'] ) ? $document['matched_terms'] : array() );
+			$lines[] = 'Content:';
+			$lines[] = isset( $document['content'] ) ? $this->normalize_multiline_text( $document['content'] ) : '';
+		}
+
+		return trim( implode( "\n", $lines ) );
+	}
+
+	/**
+	 * Sanitize and bound BetterDocs knowledge context.
+	 *
+	 * @param array<string, mixed> $knowledge Raw knowledge result.
+	 * @return array<string, mixed>
+	 */
+	private function sanitize_knowledge_base( array $knowledge ) {
+		$documents = isset( $knowledge['documents'] ) && is_array( $knowledge['documents'] ) ? array_slice( $knowledge['documents'], 0, self::MAX_KNOWLEDGE_DOCUMENTS ) : array();
+		$sanitized = array();
+		$remaining = self::MAX_KNOWLEDGE_CONTENT_LENGTH;
+
+		foreach ( $documents as $document ) {
+			if ( ! is_array( $document ) || $remaining <= 0 ) {
+				continue;
+			}
+
+			$content   = isset( $document['content'] ) ? $this->normalize_multiline_text( $document['content'] ) : '';
+			$content   = $this->truncate_text( $content, min( 6000, $remaining ) );
+			$remaining = max( 0, $remaining - $this->strlen( $content ) );
+
+			$sanitized[] = array(
+				'id'            => isset( $document['id'] ) ? absint( $document['id'] ) : 0,
+				'title'         => isset( $document['title'] ) ? $this->truncate_text( $this->normalize_text( $document['title'] ), 500 ) : '',
+				'url'           => isset( $document['url'] ) ? esc_url_raw( $document['url'] ) : '',
+				'categories'    => $this->sanitize_knowledge_list( isset( $document['categories'] ) ? $document['categories'] : array() ),
+				'score'         => isset( $document['score'] ) && is_numeric( $document['score'] ) ? (float) $document['score'] : 0.0,
+				'matched_terms' => $this->sanitize_knowledge_list( isset( $document['matched_terms'] ) ? $document['matched_terms'] : array() ),
+				'content'       => $content,
+			);
+		}
+
+		return array(
+			'source'    => 'betterdocs',
+			'enabled'   => ! empty( $knowledge['enabled'] ),
+			'available' => ! empty( $knowledge['available'] ),
+			'query'     => isset( $knowledge['query'] ) ? $this->truncate_text( $this->normalize_text( $knowledge['query'] ), 200 ) : '',
+			'documents' => $sanitized,
+			'count'     => count( $sanitized ),
+		);
+	}
+
+	/**
+	 * Sanitize a bounded list of knowledge labels.
+	 *
+	 * @param mixed $items Candidate list.
+	 * @return array<int, string>
+	 */
+	private function sanitize_knowledge_list( $items ) {
+		if ( ! is_array( $items ) ) {
+			return array();
+		}
+
+		$sanitized = array();
+
+		foreach ( array_slice( $items, 0, 20 ) as $item ) {
+			if ( is_scalar( $item ) ) {
+				$sanitized[] = $this->truncate_text( $this->normalize_text( $item ), 100 );
+			}
+		}
+
+		return array_values( array_unique( array_filter( $sanitized ) ) );
+	}
+
+	/**
+	 * Format sanitized knowledge labels for readable context.
+	 *
+	 * @param mixed $items Candidate list.
+	 * @return string
+	 */
+	private function format_knowledge_list( $items ) {
+		return implode( ', ', $this->sanitize_knowledge_list( $items ) );
 	}
 
 	/**
@@ -984,6 +1117,9 @@ final class SCAI_Context_Engine {
 				? $this->sanitize_threads( $context['threads'], $args )
 				: array(),
 			'attachments'  => $attachments,
+			'knowledge_base' => isset( $context['knowledge_base'] ) && is_array( $context['knowledge_base'] )
+				? $this->sanitize_knowledge_base( $context['knowledge_base'] )
+				: array(),
 			'stats'        => array(
 				'thread_count'               => 0,
 				'attachment_count'           => $attachment_count,
@@ -1010,6 +1146,7 @@ final class SCAI_Context_Engine {
 			'ticket'       => array(),
 			'threads'      => array(),
 			'attachments'  => array(),
+			'knowledge_base' => array(),
 			'stats'        => array(
 				'thread_count'               => 0,
 				'attachment_count'           => 0,

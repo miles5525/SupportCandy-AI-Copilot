@@ -385,6 +385,8 @@ final class SCAI_Ticket_AI_Service {
 			);
 		}
 
+		$context = $this->add_knowledge_context( $context );
+
 		$context_text = $context_engine->build_ticket_context_text( $context, $args );
 
 		if ( '' === $context_text ) {
@@ -401,6 +403,51 @@ final class SCAI_Ticket_AI_Service {
 			'context'      => $context,
 			'context_text' => $context_text,
 		);
+	}
+
+	/**
+	 * Add bounded BetterDocs knowledge to normalized ticket context.
+	 *
+	 * Search failures are intentionally non-fatal and leave AI behavior unchanged.
+	 *
+	 * @param array<string, mixed> $context Normalized ticket context.
+	 * @return array<string, mixed>
+	 */
+	private function add_knowledge_context( array $context ) {
+		if ( ! class_exists( 'SCAI_Knowledge_Search_Service' ) ) {
+			return $context;
+		}
+
+		try {
+			$service = new SCAI_Knowledge_Search_Service();
+			$result  = $service->search_for_ticket_context(
+				$context,
+				array(
+					'limit'               => 3,
+					'candidate_limit'     => 15,
+					'content_limit'       => 6000,
+					'total_content_limit' => 12000,
+					'min_score'           => 2,
+				)
+			);
+
+			if ( ! is_array( $result ) || empty( $result['documents'] ) || ! is_array( $result['documents'] ) ) {
+				return $context;
+			}
+
+			$context['knowledge_base'] = array(
+				'source'    => 'betterdocs',
+				'enabled'   => ! empty( $result['enabled'] ),
+				'available' => ! empty( $result['available'] ),
+				'query'     => isset( $result['query'] ) ? sanitize_text_field( $result['query'] ) : '',
+				'documents' => array_slice( $result['documents'], 0, 3 ),
+				'count'     => min( 3, count( $result['documents'] ) ),
+			);
+		} catch ( Throwable $exception ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch -- Optional knowledge must fail safely.
+			return $context;
+		}
+
+		return $context;
 	}
 
 	/**
@@ -798,6 +845,7 @@ final class SCAI_Ticket_AI_Service {
 			: $this->normalize_response_options( array() );
 		$image_metadata    = isset( $context['image_metadata'] ) && is_array( $context['image_metadata'] ) ? $this->sanitize_metadata( $context['image_metadata'] ) : array();
 		$workflow_metadata = isset( $context['workflow_metadata'] ) && is_array( $context['workflow_metadata'] ) ? $this->sanitize_metadata( $context['workflow_metadata'] ) : array();
+		$knowledge_metadata = $this->get_safe_knowledge_metadata( $ticket_context );
 		$conversation_args = array(
 			'provider'          => $response->get_provider(),
 			'model'             => $response->get_model(),
@@ -823,7 +871,8 @@ final class SCAI_Ticket_AI_Service {
 					'included_image_count'          => isset( $image_metadata['included_image_count'] ) ? absint( $image_metadata['included_image_count'] ) : 0,
 					'included_image_filenames'      => isset( $image_metadata['included_image_filenames'] ) && is_array( $image_metadata['included_image_filenames'] ) ? $image_metadata['included_image_filenames'] : array(),
 				),
-				$workflow_metadata
+				$workflow_metadata,
+				$knowledge_metadata
 			),
 		);
 
@@ -881,6 +930,15 @@ final class SCAI_Ticket_AI_Service {
 		$args['tone']   = $options['tone'];
 		$args['length'] = $options['length'];
 		$args['format'] = $options['format'];
+
+		$knowledge = isset( $package['context']['knowledge_base'] ) && is_array( $package['context']['knowledge_base'] )
+			? $package['context']['knowledge_base']
+			: array();
+
+		if ( ! empty( $knowledge['documents'] ) && is_array( $knowledge['documents'] ) ) {
+			$args['knowledge_source'] = 'betterdocs';
+			$args['knowledge_count']  = min( 3, count( $knowledge['documents'] ) );
+		}
 
 		$args['metadata'] = array_merge(
 			$metadata,
@@ -944,6 +1002,7 @@ final class SCAI_Ticket_AI_Service {
 		$workflow_metadata = isset( $package['workflow_metadata'] ) && is_array( $package['workflow_metadata'] ) ? $this->sanitize_metadata( $package['workflow_metadata'] ) : array();
 		$thread_count     = isset( $stats['thread_count'] ) ? absint( $stats['thread_count'] ) : 0;
 		$attachment_count = isset( $stats['attachment_count'] ) ? absint( $stats['attachment_count'] ) : 0;
+		$knowledge_metadata = $this->get_safe_knowledge_metadata( $context );
 
 		return array_merge(
 			array(
@@ -953,8 +1012,65 @@ final class SCAI_Ticket_AI_Service {
 				'context_attachment_count' => $attachment_count,
 			),
 			$workflow_metadata,
-			$image_metadata
+			$image_metadata,
+			$knowledge_metadata
 		);
+	}
+
+	/**
+	 * Build bounded knowledge metadata without article content.
+	 *
+	 * @param array<string, mixed> $context Ticket context.
+	 * @return array<string, mixed>
+	 */
+	private function get_safe_knowledge_metadata( array $context ) {
+		$knowledge = isset( $context['knowledge_base'] ) && is_array( $context['knowledge_base'] ) ? $context['knowledge_base'] : array();
+		$documents = isset( $knowledge['documents'] ) && is_array( $knowledge['documents'] ) ? array_slice( $knowledge['documents'], 0, 3 ) : array();
+		$ids       = array();
+		$titles    = array();
+
+		foreach ( $documents as $document ) {
+			if ( ! is_array( $document ) ) {
+				continue;
+			}
+
+			if ( ! empty( $document['id'] ) ) {
+				$ids[] = absint( $document['id'] );
+			}
+
+			if ( isset( $document['title'] ) && is_scalar( $document['title'] ) ) {
+				$titles[] = $this->truncate_metadata_text( sanitize_text_field( $document['title'] ), 200 );
+			}
+		}
+
+		if ( empty( $ids ) && empty( $titles ) ) {
+			return array();
+		}
+
+		return array(
+			'knowledge_source'     => 'betterdocs',
+			'knowledge_count'      => count( $documents ),
+			'knowledge_doc_ids'    => array_values( array_unique( $ids ) ),
+			'knowledge_doc_titles' => array_values( array_unique( $titles ) ),
+			'knowledge_query'      => isset( $knowledge['query'] ) ? $this->truncate_metadata_text( sanitize_text_field( $knowledge['query'] ), 200 ) : '',
+		);
+	}
+
+	/**
+	 * Truncate safe metadata text without storing unbounded values.
+	 *
+	 * @param string $text  Sanitized text.
+	 * @param int    $limit Maximum characters.
+	 * @return string
+	 */
+	private function truncate_metadata_text( $text, $limit ) {
+		$limit = max( 1, absint( $limit ) );
+
+		if ( function_exists( 'mb_substr' ) ) {
+			return mb_substr( (string) $text, 0, $limit );
+		}
+
+		return substr( (string) $text, 0, $limit );
 	}
 
 	/**

@@ -49,6 +49,10 @@ final class SCAI_Prompt_Engine {
 			$instructions .= "\n\nConversation roles:\n" . $speaker_instructions;
 		}
 
+		if ( ! empty( $args['knowledge_count'] ) ) {
+			$instructions .= "\n\nKnowledge base handling:\n" . $this->build_knowledge_handling_instructions();
+		}
+
 		/**
 		 * Filter prompt engine system instructions.
 		 *
@@ -76,31 +80,52 @@ final class SCAI_Prompt_Engine {
 			'standard' => 'Use a normal internal support-summary length.',
 			'detailed' => 'Provide a fuller internal summary while remaining factual and relevant.',
 		);
-		$prompt       = implode(
-			"\n",
-			array(
-				'Review the ticket context and return a factual support-agent summary.',
-				$length_instructions[ $options['length'] ],
-				'Use these section headings in this order:',
+		$has_knowledge          = $this->has_knowledge_documents( $context );
+		$summary_headings       = $has_knowledge
+			? array(
+				'1. Issue Summary',
+				'2. Customer Sentiment',
+				'3. Important Details',
+				'4. Attachments',
+				'5. **Suggested Knowledge References**',
+				'6. Suggested Next Action',
+			)
+			: array(
 				'1. Issue Summary',
 				'2. Customer Sentiment',
 				'3. Important Details',
 				'4. Attachments',
 				'5. Suggested Next Action',
-				'When ticket attachments exist, always include the Attachments section and list each attachment separately by filename and type.',
-				'For every listed attachment, state whether its content was inspected.',
-				'For an inspected text or log attachment, summarize useful facts supported by its provided excerpt.',
-				'For an image explicitly included in the current AI request, visually inspect it and describe relevant visible details instead of relying on its metadata-only content_inspected value.',
-				'For an uninspected image not included in the current AI request, or an uninspected PDF or other attachment, clearly state that its content was not inspected.',
-				'Do not claim an image was inspected unless the request explicitly indicates that image content was provided to the model.',
-				'Do not place attachment details only under Suggested Next Action; keep the dedicated Attachments section.',
-				'If there are no ticket attachments, the Attachments section may be omitted or say "None mentioned."',
-				'Base Customer Sentiment mainly on messages labelled Customer, not on previous Support Agent messages.',
-				'Summarize previous agent replies separately only when relevant, and treat Internal Notes as private support context.',
-				'Use only the ticket context below.',
-				'',
-				'Ticket context:',
-				$context_text,
+			);
+		$knowledge_instruction = $has_knowledge
+			? $this->build_summary_knowledge_reference_instruction( $context )
+			: '';
+		$prompt                = implode(
+			"\n",
+			array_merge(
+				array(
+					'Review the ticket context and return a factual support-agent summary.',
+					$length_instructions[ $options['length'] ],
+					'Use these section headings in this order:',
+				),
+				$summary_headings,
+				array(
+					'When ticket attachments exist, always include the Attachments section and list each attachment separately by filename and type.',
+					'For every listed attachment, state whether its content was inspected.',
+					'For an inspected text or log attachment, summarize useful facts supported by its provided excerpt.',
+					'For an image explicitly included in the current AI request, visually inspect it and describe relevant visible details instead of relying on its metadata-only content_inspected value.',
+					'For an uninspected image not included in the current AI request, or an uninspected PDF or other attachment, clearly state that its content was not inspected.',
+					'Do not claim an image was inspected unless the request explicitly indicates that image content was provided to the model.',
+					'Do not place attachment details only under Suggested Next Action; keep the dedicated Attachments section.',
+					'If there are no ticket attachments, the Attachments section may be omitted or say "None mentioned."',
+					'Base Customer Sentiment mainly on messages labelled Customer, not on previous Support Agent messages.',
+					'Summarize previous agent replies separately only when relevant, and treat Internal Notes as private support context.',
+					'Use only the ticket context below.',
+					$knowledge_instruction,
+					'',
+					'Ticket context:',
+					$context_text,
+				)
 			)
 		);
 
@@ -137,9 +162,13 @@ final class SCAI_Prompt_Engine {
 	 * @return array<string, mixed>
 	 */
 	public function build_reply_generation_request( $context_text, array $context = array(), array $args = array() ) {
-		$context_text       = $this->normalize_multiline_text( $context_text );
-		$style_instructions = $this->build_response_style_instructions( $args );
-		$prompt              = implode(
+		$context_text          = $this->normalize_multiline_text( $context_text );
+		$style_instructions    = $this->build_response_style_instructions( $args );
+		$knowledge_instruction = $this->has_knowledge_documents( $context )
+			? 'Use included BetterDocs guidance only when it directly helps; adapt useful troubleshooting naturally and include a raw article URL only when useful.'
+			: '';
+		$format_instructions  = $this->build_customer_reply_formatting_instructions( false );
+		$prompt               = implode(
 			"\n",
 			array(
 				'Write a support reply for the ticket.',
@@ -154,6 +183,9 @@ final class SCAI_Prompt_Engine {
 				'Use Internal Notes only as private guidance and never reveal or quote them in the customer-facing reply.',
 				'If Customer messages show repeated follow-ups or frustration about a delay, acknowledge that politely.',
 				'Use ticket context only.',
+				$knowledge_instruction,
+				'Customer reply formatting:',
+				$format_instructions,
 				'Return only the reply text.',
 				'',
 				'Ticket context:',
@@ -195,10 +227,14 @@ final class SCAI_Prompt_Engine {
 	 * @return array<string, mixed>
 	 */
 	public function build_reply_improvement_request( $reply_text, $context_text = '', array $context = array(), array $args = array() ) {
-		$reply_text         = $this->normalize_multiline_text( $reply_text );
-		$context_text       = $this->normalize_multiline_text( $context_text );
-		$style_instructions = $this->build_response_style_instructions( $args );
-		$prompt_parts       = array(
+		$reply_text            = $this->normalize_multiline_text( $reply_text );
+		$context_text          = $this->normalize_multiline_text( $context_text );
+		$style_instructions    = $this->build_response_style_instructions( $args );
+		$knowledge_instruction = $this->has_knowledge_documents( $context )
+			? 'Blend directly relevant BetterDocs guidance into the draft without changing or overwhelming the draft intent.'
+			: '';
+		$format_instructions  = $this->build_customer_reply_formatting_instructions( true );
+		$prompt_parts         = array(
 			'Improve the provided draft reply.',
 			'Keep the original meaning.',
 			'Make it clear and useful for support.',
@@ -210,6 +246,9 @@ final class SCAI_Prompt_Engine {
 			'Use speaker labels to preserve the agent draft intent and distinguish Customer requests from previous Support Agent replies.',
 			'Use Internal Notes only as private guidance; do not add or quote their content directly in the customer-facing reply.',
 			'If essential information is missing, ask for it rather than guessing.',
+			$knowledge_instruction,
+			'Customer reply formatting:',
+			$format_instructions,
 			'Return only the improved reply text.',
 			'',
 			'Draft reply:',
@@ -260,10 +299,14 @@ final class SCAI_Prompt_Engine {
 	 * @return array<string, mixed>
 	 */
 	public function build_reply_merge_request( $current_draft, $ai_suggestion, $context_text = '', array $context = array(), array $args = array() ) {
-		$current_draft      = $this->normalize_multiline_text( $current_draft );
-		$ai_suggestion      = $this->normalize_multiline_text( $ai_suggestion );
-		$context_text       = $this->normalize_multiline_text( $context_text );
-		$style_instructions = $this->build_response_style_instructions( $args );
+		$current_draft         = $this->normalize_multiline_text( $current_draft );
+		$ai_suggestion         = $this->normalize_multiline_text( $ai_suggestion );
+		$context_text          = $this->normalize_multiline_text( $context_text );
+		$style_instructions    = $this->build_response_style_instructions( $args );
+		$knowledge_instruction = $this->has_knowledge_documents( $context )
+			? 'Use directly relevant BetterDocs guidance only as supporting material while preserving the Current Agent Draft intent.'
+			: '';
+		$format_instructions  = $this->build_customer_reply_formatting_instructions( true );
 
 		if ( '' === $current_draft || '' === $ai_suggestion ) {
 			return array();
@@ -305,7 +348,9 @@ final class SCAI_Prompt_Engine {
 			'9. Keep the reply customer-facing.',
 			'10. Do not reveal Internal Notes.',
 			'11. Do not add unsupported claims or promises.',
-			'12. Do not add placeholders or signatures such as [Your Name] or Support Team unless they are present in the Current Agent Draft.',
+			$knowledge_instruction,
+			'12. Follow these customer reply formatting rules:',
+			$format_instructions,
 			'13. If the Current Agent Draft says "Hi, sorry for the delay. We are checking this issue.", the final reply must retain that delay acknowledgement and checking action in natural wording.',
 			'',
 			'Silent self-check before finalizing:',
@@ -368,6 +413,105 @@ final class SCAI_Prompt_Engine {
 		$instructions = apply_filters( 'scai_prompt_speaker_role_instructions', $instructions, $args );
 
 		return $this->normalize_multiline_text( $instructions );
+	}
+
+	/**
+	 * Build strict body-only formatting rules for customer-facing replies.
+	 *
+	 * @param bool $preserve_draft_signature Whether an existing draft signature may be retained.
+	 * @return string
+	 */
+	private function build_customer_reply_formatting_instructions( $preserve_draft_signature = false ) {
+		$signature_rule = $preserve_draft_signature
+			? 'Preserve a real closing or signature only when it already appears in the Current Agent Draft; otherwise add no closing or signature.'
+			: 'Do not add a closing or signature.';
+
+		return implode(
+			"\n",
+			array(
+				'- Return the customer-facing reply body only, suitable for direct insertion into the SupportCandy reply editor.',
+				'- Start directly with the customer-facing message; a natural greeting is allowed.',
+				'- Do not include an email subject line or any line beginning with "Subject:" or "Re:".',
+				'- Do not add placeholder names or signatures, including "[Your Name]" or "Support Team".',
+				'- Do not add closings such as "Best regards", "Regards", or "Thanks and regards".',
+				'- ' . $signature_rule,
+				'- Use BetterDocs only as supporting context when relevant; do not dump article content or mention BetterDocs unless naturally useful.',
+				'- Prefer "we will check", "we will review", or "we will verify" for technical actions the support team should perform.',
+				'- Ask the customer to perform technical steps only when necessary or when the ticket clearly requires customer action.',
+				'- Do not ask the customer to inspect plugin code unless requesting access, logs, or details is necessary.',
+			)
+		);
+	}
+
+	/**
+	 * Build rules for grounding responses in included BetterDocs articles.
+	 *
+	 * @return string
+	 */
+	private function build_knowledge_handling_instructions() {
+		return implode(
+			"\n",
+			array(
+				'The Knowledge Base Articles section contains public BetterDocs documentation selected as relevant.',
+				'Use it only when it directly helps answer the ticket; ticket and customer facts remain the primary source of truth.',
+				'Treat BetterDocs articles as supporting guidance and adapt relevant troubleshooting steps to the ticket.',
+				'Do not invent documentation or cite or mention articles that are not included.',
+				'Do not reveal Internal Notes or claim the customer tried a documentation step unless the ticket says so.',
+				'For customer replies, do not include raw article URLs unless they are useful or references are explicitly requested.',
+			)
+		);
+	}
+
+	/**
+	 * Build mandatory summary reference instructions from included documents.
+	 *
+	 * @param array<string, mixed> $context Compact context.
+	 * @return string
+	 */
+	private function build_summary_knowledge_reference_instruction( array $context ) {
+		$documents = isset( $context['knowledge_base']['documents'] ) && is_array( $context['knowledge_base']['documents'] )
+			? array_slice( $context['knowledge_base']['documents'], 0, 3 )
+			: array();
+		$titles    = array();
+
+		foreach ( $documents as $document ) {
+			if ( ! is_array( $document ) || ! isset( $document['title'] ) || ! is_scalar( $document['title'] ) ) {
+				continue;
+			}
+
+			$title = sanitize_text_field( (string) $document['title'] );
+
+			if ( '' !== $title ) {
+				$titles[] = $title;
+			}
+		}
+
+		if ( empty( $titles ) ) {
+			return '';
+		}
+
+		$lines = array(
+			'Knowledge Base Articles are included, so the summary MUST contain the "5. **Suggested Knowledge References**" section.',
+			'Under that heading, list the following included BetterDocs titles as short bullet points and do not invent, rename, or add references:',
+		);
+
+		foreach ( array_values( array_unique( $titles ) ) as $title ) {
+			$lines[] = '- ' . $title;
+		}
+
+		$lines[] = 'Do not copy article bodies into the reference section; use the included guidance only to support Suggested Next Action.';
+
+		return implode( "\n", $lines );
+	}
+
+	/**
+	 * Determine whether compact context includes BetterDocs documents.
+	 *
+	 * @param array<string, mixed> $context Compact context.
+	 * @return bool
+	 */
+	private function has_knowledge_documents( array $context ) {
+		return ! empty( $context['knowledge_base']['documents'] ) && is_array( $context['knowledge_base']['documents'] );
 	}
 
 	/**

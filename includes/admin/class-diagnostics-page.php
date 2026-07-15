@@ -113,6 +113,13 @@ final class SCAI_Diagnostics_Page {
 	const IMAGE_DEBUG_SUBMIT_NAME = 'scai_image_understanding_debug_submit';
 
 	/**
+	 * BetterDocs knowledge search test submit button name.
+	 *
+	 * @var string
+	 */
+	const BETTERDOCS_SEARCH_SUBMIT_NAME = 'scai_betterdocs_search_submit';
+
+	/**
 	 * Render diagnostics page.
 	 *
 	 * @return void
@@ -133,8 +140,14 @@ final class SCAI_Diagnostics_Page {
 			<?php
 			if ( ! $adapter ) {
 				$this->render_notice( __( 'SupportCandy adapter class is unavailable.', 'supportcandy-ai' ), 'error' );
+				$this->render_betterdocs_status();
+				$this->render_betterdocs_search_form();
+				$this->maybe_render_betterdocs_search_result();
 			} else {
 				$this->render_status( $adapter );
+				$this->render_betterdocs_status();
+				$this->render_betterdocs_search_form();
+				$this->maybe_render_betterdocs_search_result();
 				$this->render_ticket_form();
 				$this->render_attachment_debug_form();
 				$this->render_image_understanding_debug_form();
@@ -219,6 +232,337 @@ final class SCAI_Diagnostics_Page {
 			?>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Render the manual BetterDocs knowledge search form.
+	 *
+	 * @return void
+	 */
+	private function render_betterdocs_search_form() {
+		$search_text = $this->get_requested_betterdocs_search_text();
+
+		if ( '' === $search_text ) {
+			$search_text = 'fatal error undefined method debug log';
+		}
+		?>
+		<div class="scai-diagnostic-section scai-diagnostic-card">
+		<h2><?php echo esc_html__( 'BetterDocs Knowledge Search Test', 'supportcandy-ai' ); ?></h2>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin.php?page=' . self::PAGE_SLUG ) ); ?>" style="margin-top: 12px; max-width: 760px;">
+			<?php wp_nonce_field( self::NONCE_ACTION, self::NONCE_NAME ); ?>
+			<table class="form-table" role="presentation">
+				<tbody>
+					<tr>
+						<th scope="row">
+							<label for="scai_betterdocs_search_text"><?php echo esc_html__( 'Search text', 'supportcandy-ai' ); ?></label>
+						</th>
+						<td>
+							<textarea id="scai_betterdocs_search_text" name="scai_betterdocs_search_text" rows="4" class="large-text"><?php echo esc_textarea( $search_text ); ?></textarea>
+						</td>
+					</tr>
+				</tbody>
+			</table>
+			<?php submit_button( __( 'Test BetterDocs Search', 'supportcandy-ai' ), 'secondary', self::BETTERDOCS_SEARCH_SUBMIT_NAME ); ?>
+		</form>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Validate and render a requested BetterDocs knowledge search.
+	 *
+	 * @return void
+	 */
+	private function maybe_render_betterdocs_search_result() {
+		if ( ! $this->is_betterdocs_search_requested() ) {
+			return;
+		}
+
+		if ( ! $this->verify_request() ) {
+			$this->render_notice( __( 'Security check failed. Please try again.', 'supportcandy-ai' ), 'error' );
+			return;
+		}
+
+		if ( ! class_exists( 'SCAI_Knowledge_Search_Service' ) ) {
+			$this->render_notice( __( 'Knowledge search service is unavailable.', 'supportcandy-ai' ), 'error' );
+			return;
+		}
+
+		$search_text = $this->get_requested_betterdocs_search_text();
+
+		if ( '' === $search_text ) {
+			$this->render_notice( __( 'Please enter search text.', 'supportcandy-ai' ), 'warning' );
+			return;
+		}
+
+		$service = new SCAI_Knowledge_Search_Service();
+		$result  = $service->search_for_ticket_context(
+			array(
+				'ticket'  => array(
+					'subject' => $search_text,
+				),
+				'threads' => array(),
+			),
+			array(
+				'limit'               => 3,
+				'candidate_limit'     => 15,
+				'content_limit'       => 1000,
+				'total_content_limit' => 3000,
+			)
+		);
+
+		if ( empty( $result['enabled'] ) ) {
+			$this->render_notice( __( 'BetterDocs knowledge is disabled in SupportCandy AI settings.', 'supportcandy-ai' ), 'warning' );
+			return;
+		}
+
+		if ( empty( $result['available'] ) ) {
+			$this->render_notice( __( 'BetterDocs is not available or required content objects are not registered.', 'supportcandy-ai' ), 'warning' );
+			return;
+		}
+
+		$this->render_betterdocs_search_result( $result );
+	}
+
+	/**
+	 * Render bounded BetterDocs knowledge search results.
+	 *
+	 * Full document content is intentionally never displayed.
+	 *
+	 * @param array $result Knowledge search result.
+	 * @return void
+	 */
+	private function render_betterdocs_search_result( array $result ) {
+		$documents = isset( $result['documents'] ) && is_array( $result['documents'] ) ? $result['documents'] : array();
+		?>
+		<div class="scai-diagnostic-section scai-diagnostic-card">
+		<h2><?php echo esc_html__( 'BetterDocs Knowledge Search Result', 'supportcandy-ai' ); ?></h2>
+		<table class="widefat striped" style="max-width: 1120px;">
+			<tbody>
+				<tr>
+					<th scope="row"><?php echo esc_html__( 'Query', 'supportcandy-ai' ); ?></th>
+					<td><?php echo esc_html( isset( $result['query'] ) ? sanitize_text_field( $result['query'] ) : '' ); ?></td>
+				</tr>
+				<tr>
+					<th scope="row"><?php echo esc_html__( 'Enabled', 'supportcandy-ai' ); ?></th>
+					<td><?php echo esc_html( $this->format_bool( ! empty( $result['enabled'] ) ) ); ?></td>
+				</tr>
+				<tr>
+					<th scope="row"><?php echo esc_html__( 'Available', 'supportcandy-ai' ); ?></th>
+					<td><?php echo esc_html( $this->format_bool( ! empty( $result['available'] ) ) ); ?></td>
+				</tr>
+				<tr>
+					<th scope="row"><?php echo esc_html__( 'Candidate count', 'supportcandy-ai' ); ?></th>
+					<td><?php echo esc_html( (string) absint( isset( $result['candidate_count'] ) ? $result['candidate_count'] : 0 ) ); ?></td>
+				</tr>
+				<tr>
+					<th scope="row"><?php echo esc_html__( 'Count', 'supportcandy-ai' ); ?></th>
+					<td><?php echo esc_html( (string) absint( isset( $result['count'] ) ? $result['count'] : count( $documents ) ) ); ?></td>
+				</tr>
+			</tbody>
+		</table>
+
+		<?php if ( empty( $documents ) ) : ?>
+			<p><?php echo esc_html__( 'No relevant published BetterDocs documents were found. Try searching for a term that appears in a published doc title or content.', 'supportcandy-ai' ); ?></p>
+		<?php else : ?>
+			<table class="widefat striped" style="max-width: 1120px; margin-top: 12px;">
+				<thead>
+					<tr>
+						<th><?php echo esc_html__( 'Title', 'supportcandy-ai' ); ?></th>
+						<th><?php echo esc_html__( 'URL', 'supportcandy-ai' ); ?></th>
+						<th><?php echo esc_html__( 'Score', 'supportcandy-ai' ); ?></th>
+						<th><?php echo esc_html__( 'Matched terms', 'supportcandy-ai' ); ?></th>
+						<th><?php echo esc_html__( 'Categories', 'supportcandy-ai' ); ?></th>
+						<th><?php echo esc_html__( 'Excerpt', 'supportcandy-ai' ); ?></th>
+					</tr>
+				</thead>
+				<tbody>
+					<?php foreach ( $documents as $document ) : ?>
+						<?php
+						if ( ! is_array( $document ) ) {
+							continue;
+						}
+
+						$title         = isset( $document['title'] ) ? sanitize_text_field( $document['title'] ) : '';
+						$url           = isset( $document['url'] ) ? esc_url( $document['url'] ) : '';
+						$score         = isset( $document['score'] ) && is_numeric( $document['score'] ) ? (float) $document['score'] : 0;
+						$matched_terms = $this->format_betterdocs_result_list( isset( $document['matched_terms'] ) ? $document['matched_terms'] : array() );
+						$categories    = $this->format_betterdocs_result_list( isset( $document['categories'] ) ? $document['categories'] : array() );
+						$snippet       = isset( $document['excerpt'] ) && is_scalar( $document['excerpt'] ) ? (string) $document['excerpt'] : '';
+
+						if ( '' === trim( $snippet ) && isset( $document['content'] ) && is_scalar( $document['content'] ) ) {
+							$snippet = (string) $document['content'];
+						}
+
+						$snippet = wp_html_excerpt( wp_strip_all_tags( $snippet ), 299, '…' );
+						?>
+						<tr>
+							<td><?php echo esc_html( $title ); ?></td>
+							<td>
+								<?php if ( '' !== $url ) : ?>
+									<a href="<?php echo esc_url( $url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $url ); ?></a>
+								<?php endif; ?>
+							</td>
+							<td><?php echo esc_html( (string) $score ); ?></td>
+							<td><?php echo esc_html( $matched_terms ); ?></td>
+							<td><?php echo esc_html( $categories ); ?></td>
+							<td><?php echo esc_html( $snippet ); ?></td>
+						</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+		<?php endif; ?>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Format a bounded list from BetterDocs result data.
+	 *
+	 * @param mixed $items Result list.
+	 * @return string
+	 */
+	private function format_betterdocs_result_list( $items ) {
+		if ( ! is_array( $items ) ) {
+			return '';
+		}
+
+		$items = array_slice( array_filter( $items, 'is_scalar' ), 0, 20 );
+		$items = array_map( 'sanitize_text_field', array_map( 'strval', $items ) );
+
+		return implode( ', ', $items );
+	}
+
+	/**
+	 * Get sanitized BetterDocs test search text.
+	 *
+	 * @return string
+	 */
+	private function get_requested_betterdocs_search_text() {
+		if ( ! isset( $_POST['scai_betterdocs_search_text'] ) || ! is_scalar( $_POST['scai_betterdocs_search_text'] ) ) {
+			return '';
+		}
+
+		return sanitize_textarea_field( wp_unslash( $_POST['scai_betterdocs_search_text'] ) );
+	}
+
+	/**
+	 * Determine whether BetterDocs knowledge search was requested.
+	 *
+	 * @return bool
+	 */
+	private function is_betterdocs_search_requested() {
+		return isset( $_POST[ self::BETTERDOCS_SEARCH_SUBMIT_NAME ] );
+	}
+
+	/**
+	 * Render the read-only BetterDocs knowledge status.
+	 *
+	 * Document titles and content are intentionally not retrieved or displayed.
+	 *
+	 * @return void
+	 */
+	private function render_betterdocs_status() {
+		?>
+		<div class="scai-diagnostic-section scai-system-status">
+		<h2><?php echo esc_html__( 'BetterDocs Knowledge Check', 'supportcandy-ai' ); ?></h2>
+		<?php
+		if ( ! class_exists( 'SCAI_BetterDocs_Adapter' ) ) {
+			$this->render_notice( __( 'Adapter class not loaded.', 'supportcandy-ai' ), 'error' );
+			echo '</div>';
+			return;
+		}
+
+		$adapter         = new SCAI_BetterDocs_Adapter();
+		$status          = $adapter->get_status();
+		$setting_enabled = class_exists( 'SCAI_Settings' )
+			? (bool) SCAI_Settings::get( 'enable_betterdocs_kb', false )
+			: false;
+		$sample_count    = $this->get_betterdocs_public_doc_count( $adapter );
+		?>
+		<table class="widefat striped" style="max-width: 760px;">
+			<tbody>
+				<tr>
+					<th scope="row"><?php echo esc_html__( 'BetterDocs function exists', 'supportcandy-ai' ); ?></th>
+					<td><?php echo esc_html( $this->format_bool( ! empty( $status['betterdocs_function_exists'] ) ) ); ?></td>
+				</tr>
+				<tr>
+					<th scope="row"><?php echo esc_html__( 'BetterDocs constant defined', 'supportcandy-ai' ); ?></th>
+					<td><?php echo esc_html( $this->format_bool( ! empty( $status['betterdocs_constant_defined'] ) ) ); ?></td>
+				</tr>
+				<tr>
+					<th scope="row"><?php echo esc_html__( 'BetterDocs plugin class exists', 'supportcandy-ai' ); ?></th>
+					<td><?php echo esc_html( $this->format_bool( ! empty( $status['plugin_class_exists'] ) ) ); ?></td>
+				</tr>
+				<tr>
+					<th scope="row"><?php echo esc_html__( 'Docs post type registered', 'supportcandy-ai' ); ?></th>
+					<td><?php echo esc_html( $this->format_bool( ! empty( $status['post_type_exists'] ) ) ); ?></td>
+				</tr>
+				<tr>
+					<th scope="row"><?php echo esc_html__( 'Category taxonomy registered', 'supportcandy-ai' ); ?></th>
+					<td><?php echo esc_html( $this->format_bool( ! empty( $status['category_taxonomy_exists'] ) ) ); ?></td>
+				</tr>
+				<tr>
+					<th scope="row"><?php echo esc_html__( 'Tag taxonomy registered', 'supportcandy-ai' ); ?></th>
+					<td><?php echo esc_html( $this->format_bool( ! empty( $status['tag_taxonomy_exists'] ) ) ); ?></td>
+				</tr>
+				<tr>
+					<th scope="row"><?php echo esc_html__( 'Knowledge base taxonomy registered', 'supportcandy-ai' ); ?></th>
+					<td><?php echo esc_html( $this->format_bool( ! empty( $status['knowledge_base_taxonomy_exists'] ) ) ); ?></td>
+				</tr>
+				<tr>
+					<th scope="row"><?php echo esc_html__( 'Adapter available', 'supportcandy-ai' ); ?></th>
+					<td><?php echo esc_html( $this->format_bool( ! empty( $status['available'] ) ) ); ?></td>
+				</tr>
+				<tr>
+					<th scope="row"><?php echo esc_html__( 'BetterDocs knowledge setting enabled', 'supportcandy-ai' ); ?></th>
+					<td><?php echo esc_html( $this->format_bool( $setting_enabled ) ); ?></td>
+				</tr>
+				<tr>
+					<th scope="row"><?php echo esc_html__( 'Published public docs sample count', 'supportcandy-ai' ); ?></th>
+					<td><?php echo esc_html( (string) $sample_count ); ?></td>
+				</tr>
+			</tbody>
+		</table>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Count published public BetterDocs documents without retrieving content.
+	 *
+	 * @param SCAI_BetterDocs_Adapter $adapter BetterDocs adapter.
+	 * @return int
+	 */
+	private function get_betterdocs_public_doc_count( $adapter ) {
+		if ( ! $adapter->is_available() ) {
+			return 0;
+		}
+
+		if ( function_exists( 'is_post_type_viewable' ) ) {
+			$post_type = get_post_type_object( SCAI_BetterDocs_Adapter::POST_TYPE );
+
+			if ( ! $post_type || ! is_post_type_viewable( $post_type ) ) {
+				return 0;
+			}
+		}
+
+		$docs_query = new WP_Query(
+			array(
+				'post_type'              => SCAI_BetterDocs_Adapter::POST_TYPE,
+				'post_status'            => 'publish',
+				'has_password'           => false,
+				'posts_per_page'         => 1,
+				'fields'                 => 'ids',
+				'no_found_rows'          => false,
+				'ignore_sticky_posts'    => true,
+				'update_post_meta_cache' => false,
+				'update_post_term_cache' => false,
+				'suppress_filters'       => false,
+			)
+		);
+
+		return max( 0, (int) $docs_query->found_posts );
 	}
 
 	/**

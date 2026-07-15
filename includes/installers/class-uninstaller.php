@@ -283,6 +283,7 @@ final class SCAI_Uninstaller {
 			'scai_active_provider',
 			'scai_company_instructions',
 			'scai_image_understanding_enabled',
+			'scai_enable_betterdocs_kb',
 			'scai_knowledge_sync_enabled',
 			'scai_last_knowledge_sync_at',
 			'scai_provider_configs',

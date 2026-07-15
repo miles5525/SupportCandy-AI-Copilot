@@ -68,6 +68,10 @@ if ( ! class_exists( 'SCAI_Loader' ) ) {
 				// SupportCandy adapter.
 				SCAI_PLUGIN_PATH . 'includes/adapter/class-supportcandy-adapter.php',
 
+				// BetterDocs integration.
+				SCAI_PLUGIN_PATH . 'includes/integrations/class-betterdocs-adapter.php',
+				SCAI_PLUGIN_PATH . 'includes/services/class-knowledge-search-service.php',
+
 				// Context engine.
 				SCAI_PLUGIN_PATH . 'includes/ai/class-context-engine.php',
 				SCAI_PLUGIN_PATH . 'includes/ai/class-prompt-engine.php',

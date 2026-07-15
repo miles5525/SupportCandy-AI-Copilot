@@ -102,6 +102,11 @@ final class SCAI_Settings_Page {
 		);
 
 		SCAI_Settings::update(
+			'enable_betterdocs_kb',
+			isset( $posted['scai_enable_betterdocs_kb'] ) ? 1 : 0
+		);
+
+		SCAI_Settings::update(
 			'knowledge_sync_enabled',
 			isset( $posted['scai_knowledge_sync_enabled'] ) ? 1 : 0
 		);
@@ -242,6 +247,7 @@ final class SCAI_Settings_Page {
 		$retention_days              = $this->get_setting( 'conversation_retention_days', 30 );
 		$delete_data_on_uninstall    = $this->is_setting_enabled( 'delete_data_on_uninstall' );
 		$image_understanding_enabled = $this->is_setting_enabled( 'image_understanding_enabled' );
+		$enable_betterdocs_kb        = $this->is_setting_enabled( 'enable_betterdocs_kb' );
 		$knowledge_sync_enabled      = $this->is_setting_enabled( 'knowledge_sync_enabled' );
 		$company_instructions        = $this->get_setting( 'company_instructions', '' );
 
@@ -292,6 +298,30 @@ final class SCAI_Settings_Page {
 							<p class="description">
 								<?php echo esc_html__( 'When enabled, eligible image attachments can be visually inspected by the active AI provider during summaries and replies. This may send image content to the configured AI provider. Keep this disabled unless your site is allowed to share ticket image attachments with the provider. Image data is used only for the AI request and is not stored in usage logs or conversation history.', 'supportcandy-ai' ); ?>
 							</p>
+						</td>
+					</tr>
+
+					<tr>
+						<th scope="row"><?php echo esc_html__( 'Enable BetterDocs knowledge', 'supportcandy-ai' ); ?></th>
+						<td>
+							<label for="scai_enable_betterdocs_kb">
+								<input
+									type="checkbox"
+									id="scai_enable_betterdocs_kb"
+									name="scai_enable_betterdocs_kb"
+									value="1"
+									<?php checked( $enable_betterdocs_kb ); ?>
+								/>
+								<?php echo esc_html__( 'Allow AI replies to use relevant public BetterDocs articles.', 'supportcandy-ai' ); ?>
+							</label>
+							<p class="description">
+								<?php echo esc_html__( 'Allows AI replies to use relevant public BetterDocs articles. This is disabled by default and must be enabled intentionally.', 'supportcandy-ai' ); ?>
+							</p>
+							<?php if ( ! post_type_exists( 'docs' ) && ! function_exists( 'betterdocs' ) ) : ?>
+								<p class="description">
+									<?php echo esc_html__( 'BetterDocs is not currently detected. This setting will take effect when BetterDocs is active.', 'supportcandy-ai' ); ?>
+								</p>
+							<?php endif; ?>
 						</td>
 					</tr>
 
