@@ -164,3 +164,114 @@
 	color: #646970;
 	font-size: 12px;
 }
+
+.scai-getting-started-wrap {
+	max-width: 1180px;
+}
+
+.scai-setup-hero,
+.scai-setup-card,
+.scai-setup-steps,
+.scai-privacy-note {
+	box-sizing: border-box;
+	border: 1px solid #dcdcde;
+	border-radius: var(--scai-admin-control-radius);
+	background: #fff;
+}
+
+.scai-setup-hero {
+	margin: 20px 0 24px;
+	padding: 24px;
+	border-color: var(--scai-admin-border);
+}
+
+.scai-setup-hero h1 {
+	margin: 0 0 8px;
+}
+
+.scai-setup-hero p {
+	max-width: 760px;
+	margin: 0 0 14px;
+	font-size: 15px;
+}
+
+.scai-setup-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 16px;
+	margin: 12px 0 28px;
+}
+
+.scai-setup-card {
+	padding: 18px;
+}
+
+.scai-setup-card h3 {
+	margin: 12px 0 6px;
+	font-size: 16px;
+}
+
+.scai-setup-card p {
+	margin: 0;
+	color: #50575e;
+}
+
+.scai-status-badge {
+	display: inline-block;
+	padding: 4px 9px;
+	border-radius: 999px;
+	font-size: 12px;
+	font-weight: 600;
+	line-height: 1.4;
+}
+
+.scai-status-complete {
+	background: #dff6dd;
+	color: #0a5c20;
+}
+
+.scai-status-warning {
+	background: #fcf0c8;
+	color: #704d00;
+}
+
+.scai-status-optional,
+.scai-status-instructional {
+	background: #e8f1fb;
+	color: #135e96;
+}
+
+.scai-setup-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 16px;
+}
+
+.scai-setup-steps,
+.scai-privacy-note {
+	margin-top: 20px;
+	padding: 20px 24px;
+}
+
+.scai-setup-steps h2 {
+	margin-top: 0;
+}
+
+.scai-setup-steps ol {
+	margin-bottom: 0;
+}
+
+.scai-privacy-note {
+	border-left: 4px solid var(--scai-admin-primary);
+}
+
+.scai-privacy-note p {
+	margin-bottom: 0;
+}
+
+@media (max-width: 782px) {
+	.scai-setup-grid {
+		grid-template-columns: 1fr;
+	}
+}

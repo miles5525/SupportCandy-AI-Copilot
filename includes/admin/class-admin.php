@@ -29,6 +29,13 @@ final class SCAI_Admin {
 	const CAPABILITY = 'manage_options';
 
 	/**
+	 * Getting Started page instance.
+	 *
+	 * @var SCAI_Getting_Started_Page|null
+	 */
+	private $getting_started_page = null;
+
+	/**
 	 * Settings page instance.
 	 *
 	 * @var SCAI_Settings_Page|null
@@ -80,6 +87,10 @@ final class SCAI_Admin {
 	 * @return void
 	 */
 	private function init_pages() {
+		if ( class_exists( 'SCAI_Getting_Started_Page' ) ) {
+			$this->getting_started_page = new SCAI_Getting_Started_Page();
+		}
+
 		if ( class_exists( 'SCAI_Settings_Page' ) ) {
 			$this->settings_page = new SCAI_Settings_Page();
 			$this->settings_page->init();
@@ -130,6 +141,15 @@ final class SCAI_Admin {
 
 		add_submenu_page(
 			self::MENU_SLUG,
+			esc_html__( 'Getting Started', 'supportcandy-ai' ),
+			esc_html__( 'Getting Started', 'supportcandy-ai' ),
+			self::CAPABILITY,
+			'scai-getting-started',
+			array( $this, 'render_getting_started_page' )
+		);
+
+		add_submenu_page(
+			self::MENU_SLUG,
 			esc_html__( 'SupportCandy AI Settings', 'supportcandy-ai' ),
 			esc_html__( 'Settings', 'supportcandy-ai' ),
 			self::CAPABILITY,
@@ -172,6 +192,28 @@ final class SCAI_Admin {
 			'scai-usage-logs',
 			array( $this, 'render_usage_logs_page' )
 		);
+	}
+
+	/**
+	 * Render Getting Started page.
+	 *
+	 * @return void
+	 */
+	public function render_getting_started_page() {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die(
+				esc_html__( 'You do not have permission to access this page.', 'supportcandy-ai' ),
+				esc_html__( 'Permission denied', 'supportcandy-ai' ),
+				array( 'response' => 403 )
+			);
+		}
+
+		if ( class_exists( 'SCAI_Getting_Started_Page' ) && $this->getting_started_page instanceof SCAI_Getting_Started_Page ) {
+			$this->getting_started_page->render();
+			return;
+		}
+
+		$this->render_missing_getting_started_page_notice();
 	}
 
 	/**
@@ -313,6 +355,22 @@ final class SCAI_Admin {
 					);
 					?>
 				</p>
+			</div>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Render fallback notice when Getting Started is unavailable.
+	 *
+	 * @return void
+	 */
+	private function render_missing_getting_started_page_notice() {
+		?>
+		<div class="wrap scai-admin-page">
+			<h1><?php echo esc_html__( 'Getting Started', 'supportcandy-ai' ); ?></h1>
+			<div class="notice notice-error">
+				<p><?php echo esc_html__( 'Getting Started page is unavailable. Please check the plugin installation.', 'supportcandy-ai' ); ?></p>
 			</div>
 		</div>
 		<?php
