@@ -57,6 +57,13 @@ final class SCAI_Knowledge_Sources_Page {
 	const MAX_TAG_LENGTH = 50;
 
 	/**
+	 * Maximum administrator search-test input length.
+	 *
+	 * @var int
+	 */
+	const MAX_SEARCH_TEST_LENGTH = 2000;
+
+	/**
 	 * Register authenticated admin POST handlers.
 	 */
 	public function __construct() {
@@ -234,6 +241,8 @@ final class SCAI_Knowledge_Sources_Page {
 		$sources    = array();
 		$editing    = null;
 		$deleting   = null;
+		$search_text   = '';
+		$search_result = null;
 
 		if ( $repository ) {
 			try {
@@ -256,6 +265,31 @@ final class SCAI_Knowledge_Sources_Page {
 				$repository = null;
 				$counts     = $this->get_empty_counts();
 				$sources    = array();
+			}
+		}
+
+		if ( $this->is_search_test_request() ) {
+			check_admin_referer( 'scai_test_custom_knowledge_search', 'scai_custom_knowledge_search_nonce' );
+			$search_text = $this->get_search_test_text();
+
+			if ( '' !== $search_text && class_exists( 'SCAI_Custom_Knowledge_Search_Service' ) ) {
+				try {
+					$search_service = new SCAI_Custom_Knowledge_Search_Service();
+					$search_result  = $search_service->search(
+						$search_text,
+						array(
+							'limit'               => 3,
+							'candidate_limit'     => 20,
+							'content_limit'       => 1000,
+							'total_content_limit' => 3000,
+							'min_score'           => 2,
+						)
+					);
+				} catch ( Throwable $exception ) {
+					$search_result = $this->get_unavailable_search_result();
+				}
+			} elseif ( '' !== $search_text ) {
+				$search_result = $this->get_unavailable_search_result();
 			}
 		}
 
@@ -294,6 +328,8 @@ final class SCAI_Knowledge_Sources_Page {
 			<?php else : ?>
 				<?php $this->render_manual_source_form( $editing, (bool) $repository ); ?>
 			<?php endif; ?>
+
+			<?php $this->render_search_test( $search_text, $search_result ); ?>
 
 			<h2><?php echo esc_html__( 'Other Source Types', 'supportcandy-ai' ); ?></h2>
 			<div class="scai-knowledge-grid">
@@ -429,6 +465,102 @@ final class SCAI_Knowledge_Sources_Page {
 				</div>
 			</form>
 		</section>
+		<?php
+	}
+
+	/**
+	 * Render the read-only custom knowledge search test.
+	 *
+	 * @param string                   $search_text Search input.
+	 * @param array<string, mixed>|null $result     Search result, when submitted.
+	 * @return void
+	 */
+	private function render_search_test( $search_text, $result ) {
+		?>
+		<section class="scai-knowledge-card scai-knowledge-form-card">
+			<h2><?php echo esc_html__( 'Test Custom Knowledge Search', 'supportcandy-ai' ); ?></h2>
+			<p><?php echo esc_html__( 'Test deterministic retrieval against active custom Knowledge Sources. This test makes no AI request and does not change stored sources.', 'supportcandy-ai' ); ?></p>
+
+			<form class="scai-knowledge-form" method="post" action="<?php echo esc_url( $this->get_page_url() ); ?>">
+				<?php wp_nonce_field( 'scai_test_custom_knowledge_search', 'scai_custom_knowledge_search_nonce' ); ?>
+				<input type="hidden" name="scai_custom_knowledge_search_test" value="1" />
+				<p>
+					<label for="scai-custom-knowledge-search-text"><strong><?php echo esc_html__( 'Search text', 'supportcandy-ai' ); ?></strong></label>
+					<textarea id="scai-custom-knowledge-search-text" class="large-text" name="search_text" rows="3" maxlength="<?php echo esc_attr( (string) self::MAX_SEARCH_TEST_LENGTH ); ?>" required><?php echo esc_textarea( $search_text ); ?></textarea>
+				</p>
+				<?php submit_button( __( 'Test Search', 'supportcandy-ai' ), 'secondary', 'submit', false ); ?>
+			</form>
+
+			<?php if ( is_array( $result ) ) : ?>
+				<?php $this->render_search_test_result( $result ); ?>
+			<?php endif; ?>
+		</section>
+		<?php
+	}
+
+	/**
+	 * Render safe bounded search-test results.
+	 *
+	 * @param array<string, mixed> $result Search result.
+	 * @return void
+	 */
+	private function render_search_test_result( array $result ) {
+		$documents = isset( $result['documents'] ) && is_array( $result['documents'] ) ? array_slice( $result['documents'], 0, 3 ) : array();
+		?>
+		<div class="scai-knowledge-search-result">
+			<h3><?php echo esc_html__( 'Search Result', 'supportcandy-ai' ); ?></h3>
+
+			<?php if ( empty( $result['available'] ) ) : ?>
+				<div class="notice notice-warning inline"><p><?php echo esc_html__( 'Custom knowledge search is not available because its repository or table could not be loaded.', 'supportcandy-ai' ); ?></p></div>
+				<?php return; ?>
+			<?php endif; ?>
+
+			<dl class="scai-knowledge-search-summary">
+				<dt><?php echo esc_html__( 'Query', 'supportcandy-ai' ); ?></dt>
+				<dd><?php echo esc_html( isset( $result['query'] ) ? $result['query'] : '' ); ?></dd>
+				<dt><?php echo esc_html__( 'Candidate count', 'supportcandy-ai' ); ?></dt>
+				<dd><?php echo esc_html( (string) absint( isset( $result['candidate_count'] ) ? $result['candidate_count'] : 0 ) ); ?></dd>
+				<dt><?php echo esc_html__( 'Final count', 'supportcandy-ai' ); ?></dt>
+				<dd><?php echo esc_html( (string) absint( isset( $result['count'] ) ? $result['count'] : 0 ) ); ?></dd>
+			</dl>
+
+			<?php if ( empty( $documents ) ) : ?>
+				<p class="scai-knowledge-muted"><?php echo esc_html__( 'No relevant active custom knowledge sources were found.', 'supportcandy-ai' ); ?></p>
+				<?php return; ?>
+			<?php endif; ?>
+
+			<div class="scai-knowledge-list-wrap">
+				<table class="widefat striped scai-knowledge-list">
+					<thead>
+						<tr>
+							<th scope="col"><?php echo esc_html__( 'Title', 'supportcandy-ai' ); ?></th>
+							<th scope="col"><?php echo esc_html__( 'Type', 'supportcandy-ai' ); ?></th>
+							<th scope="col"><?php echo esc_html__( 'Score', 'supportcandy-ai' ); ?></th>
+							<th scope="col"><?php echo esc_html__( 'Matched terms', 'supportcandy-ai' ); ?></th>
+							<th scope="col"><?php echo esc_html__( 'Tags', 'supportcandy-ai' ); ?></th>
+							<th scope="col"><?php echo esc_html__( 'Snippet', 'supportcandy-ai' ); ?></th>
+						</tr>
+					</thead>
+					<tbody>
+						<?php foreach ( $documents as $document ) : ?>
+							<?php
+							$matched = isset( $document['matched_terms'] ) && is_array( $document['matched_terms'] ) ? array_slice( $document['matched_terms'], 0, 20 ) : array();
+							$tags    = isset( $document['metadata']['tags'] ) && is_array( $document['metadata']['tags'] ) ? array_slice( $document['metadata']['tags'], 0, self::MAX_TAGS ) : array();
+							$snippet = isset( $document['excerpt'] ) ? $this->substring( (string) $document['excerpt'], 0, 300 ) : '';
+							?>
+							<tr>
+								<td><?php echo esc_html( isset( $document['title'] ) ? $document['title'] : '' ); ?></td>
+								<td><?php echo esc_html( $this->get_source_type_label( isset( $document['source_type'] ) ? $document['source_type'] : '' ) ); ?></td>
+								<td><?php echo esc_html( number_format_i18n( isset( $document['score'] ) ? (float) $document['score'] : 0, 1 ) ); ?></td>
+								<td><?php echo esc_html( implode( ', ', array_map( 'sanitize_text_field', $matched ) ) ); ?></td>
+								<td><?php echo esc_html( implode( ', ', array_map( 'sanitize_text_field', $tags ) ) ); ?></td>
+								<td><span class="scai-knowledge-excerpt"><?php echo esc_html( $snippet ); ?></span></td>
+							</tr>
+						<?php endforeach; ?>
+					</tbody>
+				</table>
+			</div>
+		</div>
 		<?php
 	}
 
@@ -755,6 +887,46 @@ final class SCAI_Knowledge_Sources_Page {
 	 */
 	private function get_query_action() {
 		return isset( $_GET['action'] ) && is_scalar( $_GET['action'] ) ? sanitize_key( wp_unslash( $_GET['action'] ) ) : '';
+	}
+
+	/**
+	 * Determine whether the read-only search test was submitted.
+	 *
+	 * @return bool
+	 */
+	private function is_search_test_request() {
+		$request_method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) ) : '';
+
+		return 'POST' === $request_method && isset( $_POST['scai_custom_knowledge_search_test'] );
+	}
+
+	/**
+	 * Get bounded administrator-entered search text.
+	 *
+	 * @return string
+	 */
+	private function get_search_test_text() {
+		$text = isset( $_POST['search_text'] ) && is_scalar( $_POST['search_text'] )
+			? sanitize_textarea_field( wp_unslash( $_POST['search_text'] ) )
+			: '';
+
+		return $this->substring( trim( $text ), 0, self::MAX_SEARCH_TEST_LENGTH );
+	}
+
+	/**
+	 * Get a safe unavailable search result.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function get_unavailable_search_result() {
+		return array(
+			'enabled'         => true,
+			'available'       => false,
+			'query'           => '',
+			'candidate_count' => 0,
+			'count'           => 0,
+			'documents'       => array(),
+		);
 	}
 
 	/**
