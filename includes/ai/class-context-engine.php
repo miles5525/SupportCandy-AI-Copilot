@@ -63,6 +63,15 @@ final class SCAI_Context_Engine {
 	 */
 	const MAX_KNOWLEDGE_CONTENT_LENGTH = 12000;
 
+	/** Maximum custom knowledge articles included in context. */
+	const MAX_CUSTOM_KNOWLEDGE_DOCUMENTS = 3;
+
+	/** Maximum characters from one custom knowledge article. */
+	const MAX_CUSTOM_KNOWLEDGE_DOCUMENT_LENGTH = 3000;
+
+	/** Maximum combined custom knowledge content characters. */
+	const MAX_CUSTOM_KNOWLEDGE_CONTENT_LENGTH = 8000;
+
 	/**
 	 * Build compact AI-ready ticket context.
 	 *
@@ -99,6 +108,9 @@ final class SCAI_Context_Engine {
 			'attachments'  => $attachments,
 			'knowledge_base' => isset( $ticket_context['knowledge_base'] ) && is_array( $ticket_context['knowledge_base'] )
 				? $this->sanitize_knowledge_base( $ticket_context['knowledge_base'] )
+				: array(),
+			'custom_knowledge_base' => isset( $ticket_context['custom_knowledge_base'] ) && is_array( $ticket_context['custom_knowledge_base'] )
+				? $this->sanitize_custom_knowledge_base( $ticket_context['custom_knowledge_base'] )
 				: array(),
 			'stats'        => array(
 				'thread_count'               => count( $threads ),
@@ -736,6 +748,15 @@ final class SCAI_Context_Engine {
 			$lines[] = $knowledge_text;
 		}
 
+		$custom_knowledge_text = $this->build_custom_knowledge_context_text(
+			isset( $context['custom_knowledge_base'] ) && is_array( $context['custom_knowledge_base'] ) ? $context['custom_knowledge_base'] : array()
+		);
+
+		if ( '' !== $custom_knowledge_text ) {
+			$lines[] = '';
+			$lines[] = $custom_knowledge_text;
+		}
+
 		return implode( "\n", $lines );
 	}
 
@@ -806,6 +827,78 @@ final class SCAI_Context_Engine {
 
 		return array(
 			'source'    => 'betterdocs',
+			'enabled'   => ! empty( $knowledge['enabled'] ),
+			'available' => ! empty( $knowledge['available'] ),
+			'query'     => isset( $knowledge['query'] ) ? $this->truncate_text( $this->normalize_text( $knowledge['query'] ), 200 ) : '',
+			'documents' => $sanitized,
+			'count'     => count( $sanitized ),
+		);
+	}
+
+	/**
+	 * Build a separate readable custom knowledge section.
+	 *
+	 * @param array<string, mixed> $knowledge Custom knowledge context.
+	 * @return string
+	 */
+	private function build_custom_knowledge_context_text( array $knowledge ) {
+		$documents = isset( $knowledge['documents'] ) && is_array( $knowledge['documents'] ) ? $knowledge['documents'] : array();
+		if ( empty( $documents ) ) {
+			return '';
+		}
+
+		$lines = array( 'Custom Knowledge Base Articles:' );
+		foreach ( array_slice( $documents, 0, self::MAX_CUSTOM_KNOWLEDGE_DOCUMENTS ) as $index => $document ) {
+			if ( ! is_array( $document ) || empty( $document['content'] ) ) {
+				continue;
+			}
+			$lines[] = '';
+			$lines[] = ( $index + 1 ) . '. ' . ( isset( $document['title'] ) ? $this->normalize_text( $document['title'] ) : '' );
+			$lines[] = 'Source: Custom Knowledge Base';
+			$lines[] = 'Type: Manual';
+			$lines[] = 'Tags: ' . $this->format_knowledge_list( isset( $document['tags'] ) ? $document['tags'] : array() );
+			$lines[] = 'Matched terms: ' . $this->format_knowledge_list( isset( $document['matched_terms'] ) ? $document['matched_terms'] : array() );
+			$lines[] = 'Content:';
+			$lines[] = $this->normalize_multiline_text( $document['content'] );
+		}
+
+		return count( $lines ) > 1 ? trim( implode( "\n", $lines ) ) : '';
+	}
+
+	/**
+	 * Sanitize and bound custom knowledge without retaining raw metadata.
+	 *
+	 * @param array<string, mixed> $knowledge Raw custom knowledge result.
+	 * @return array<string, mixed>
+	 */
+	private function sanitize_custom_knowledge_base( array $knowledge ) {
+		$documents = isset( $knowledge['documents'] ) && is_array( $knowledge['documents'] ) ? array_slice( $knowledge['documents'], 0, self::MAX_CUSTOM_KNOWLEDGE_DOCUMENTS ) : array();
+		$sanitized = array();
+		$remaining = self::MAX_CUSTOM_KNOWLEDGE_CONTENT_LENGTH;
+
+		foreach ( $documents as $document ) {
+			if ( ! is_array( $document ) || $remaining <= 0 ) {
+				continue;
+			}
+			$content = isset( $document['content'] ) ? $this->normalize_multiline_text( $document['content'] ) : '';
+			$content = $this->truncate_text( $content, min( self::MAX_CUSTOM_KNOWLEDGE_DOCUMENT_LENGTH, $remaining ) );
+			if ( '' === $content ) {
+				continue;
+			}
+			$remaining -= $this->strlen( $content );
+			$metadata = isset( $document['metadata'] ) && is_array( $document['metadata'] ) ? $document['metadata'] : array();
+			$tags = isset( $document['tags'] ) ? $document['tags'] : ( isset( $metadata['tags'] ) ? $metadata['tags'] : array() );
+			$sanitized[] = array(
+				'id'            => isset( $document['id'] ) ? absint( $document['id'] ) : 0,
+				'title'         => isset( $document['title'] ) ? $this->truncate_text( $this->normalize_text( $document['title'] ), 500 ) : '',
+				'tags'          => $this->sanitize_knowledge_list( $tags ),
+				'matched_terms' => $this->sanitize_knowledge_list( isset( $document['matched_terms'] ) ? $document['matched_terms'] : array() ),
+				'content'       => $content,
+			);
+		}
+
+		return array(
+			'source'    => 'custom_knowledge',
 			'enabled'   => ! empty( $knowledge['enabled'] ),
 			'available' => ! empty( $knowledge['available'] ),
 			'query'     => isset( $knowledge['query'] ) ? $this->truncate_text( $this->normalize_text( $knowledge['query'] ), 200 ) : '',
@@ -1120,6 +1213,9 @@ final class SCAI_Context_Engine {
 			'knowledge_base' => isset( $context['knowledge_base'] ) && is_array( $context['knowledge_base'] )
 				? $this->sanitize_knowledge_base( $context['knowledge_base'] )
 				: array(),
+			'custom_knowledge_base' => isset( $context['custom_knowledge_base'] ) && is_array( $context['custom_knowledge_base'] )
+				? $this->sanitize_custom_knowledge_base( $context['custom_knowledge_base'] )
+				: array(),
 			'stats'        => array(
 				'thread_count'               => 0,
 				'attachment_count'           => $attachment_count,
@@ -1147,6 +1243,7 @@ final class SCAI_Context_Engine {
 			'threads'      => array(),
 			'attachments'  => array(),
 			'knowledge_base' => array(),
+			'custom_knowledge_base' => array(),
 			'stats'        => array(
 				'thread_count'               => 0,
 				'attachment_count'           => 0,

@@ -51,6 +51,8 @@ if ( ! class_exists( 'SCAI_Loader' ) ) {
 				SCAI_PLUGIN_PATH . 'includes/services/class-attachment-reader.php',
 				SCAI_PLUGIN_PATH . 'includes/services/class-image-attachment-preparer.php',
 				SCAI_PLUGIN_PATH . 'includes/services/class-custom-knowledge-repository.php',
+				SCAI_PLUGIN_PATH . 'includes/services/class-url-content-fetcher.php',
+				SCAI_PLUGIN_PATH . 'includes/services/class-knowledge-ingestion-service.php',
 				SCAI_PLUGIN_PATH . 'includes/services/class-custom-knowledge-search-service.php',
 
 				// Admin.

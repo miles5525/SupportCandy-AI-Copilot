@@ -414,37 +414,62 @@ final class SCAI_Ticket_AI_Service {
 	 * @return array<string, mixed>
 	 */
 	private function add_knowledge_context( array $context ) {
-		if ( ! class_exists( 'SCAI_Knowledge_Search_Service' ) ) {
-			return $context;
+		if ( class_exists( 'SCAI_Knowledge_Search_Service' ) ) {
+			try {
+				$service = new SCAI_Knowledge_Search_Service();
+				$result  = $service->search_for_ticket_context(
+					$context,
+					array(
+						'limit'               => 3,
+						'candidate_limit'     => 15,
+						'content_limit'       => 6000,
+						'total_content_limit' => 12000,
+						'min_score'           => 2,
+					)
+				);
+
+				if ( is_array( $result ) && ! empty( $result['documents'] ) && is_array( $result['documents'] ) ) {
+					$context['knowledge_base'] = array(
+						'source'    => 'betterdocs',
+						'enabled'   => ! empty( $result['enabled'] ),
+						'available' => ! empty( $result['available'] ),
+						'query'     => isset( $result['query'] ) ? sanitize_text_field( $result['query'] ) : '',
+						'documents' => array_slice( $result['documents'], 0, 3 ),
+						'count'     => min( 3, count( $result['documents'] ) ),
+					);
+				}
+			} catch ( Throwable $exception ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch -- Optional knowledge must fail safely.
+				// BetterDocs failure must not prevent other context sources.
+			}
 		}
 
-		try {
-			$service = new SCAI_Knowledge_Search_Service();
-			$result  = $service->search_for_ticket_context(
-				$context,
-				array(
-					'limit'               => 3,
-					'candidate_limit'     => 15,
-					'content_limit'       => 6000,
-					'total_content_limit' => 12000,
-					'min_score'           => 2,
-				)
-			);
+		if ( class_exists( 'SCAI_Custom_Knowledge_Search_Service' ) ) {
+			try {
+				$service = new SCAI_Custom_Knowledge_Search_Service();
+				$result  = $service->search_for_ticket_context(
+					$context,
+					array(
+						'limit'               => 3,
+						'candidate_limit'     => 20,
+						'content_limit'       => 3000,
+						'total_content_limit' => 8000,
+						'min_score'           => 4,
+					)
+				);
 
-			if ( ! is_array( $result ) || empty( $result['documents'] ) || ! is_array( $result['documents'] ) ) {
-				return $context;
+				if ( is_array( $result ) && ! empty( $result['documents'] ) && is_array( $result['documents'] ) ) {
+					$context['custom_knowledge_base'] = array(
+						'source'    => 'custom_knowledge',
+						'enabled'   => ! empty( $result['enabled'] ),
+						'available' => ! empty( $result['available'] ),
+						'query'     => isset( $result['query'] ) ? sanitize_text_field( $result['query'] ) : '',
+						'documents' => array_slice( $result['documents'], 0, 3 ),
+						'count'     => min( 3, count( $result['documents'] ) ),
+					);
+				}
+			} catch ( Throwable $exception ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch -- Optional knowledge must fail safely.
+				// Custom knowledge failure must not affect BetterDocs or ticket AI.
 			}
-
-			$context['knowledge_base'] = array(
-				'source'    => 'betterdocs',
-				'enabled'   => ! empty( $result['enabled'] ),
-				'available' => ! empty( $result['available'] ),
-				'query'     => isset( $result['query'] ) ? sanitize_text_field( $result['query'] ) : '',
-				'documents' => array_slice( $result['documents'], 0, 3 ),
-				'count'     => min( 3, count( $result['documents'] ) ),
-			);
-		} catch ( Throwable $exception ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch -- Optional knowledge must fail safely.
-			return $context;
 		}
 
 		return $context;
@@ -940,6 +965,17 @@ final class SCAI_Ticket_AI_Service {
 			$args['knowledge_count']  = min( 3, count( $knowledge['documents'] ) );
 		}
 
+		$custom_knowledge = isset( $package['context']['custom_knowledge_base'] ) && is_array( $package['context']['custom_knowledge_base'] )
+			? $package['context']['custom_knowledge_base']
+			: array();
+
+		if ( ! empty( $custom_knowledge['documents'] ) && is_array( $custom_knowledge['documents'] ) ) {
+			$args['custom_knowledge_count'] = min( 3, count( $custom_knowledge['documents'] ) );
+			$args['knowledge_count']        = isset( $args['knowledge_count'] )
+				? absint( $args['knowledge_count'] ) + $args['custom_knowledge_count']
+				: $args['custom_knowledge_count'];
+		}
+
 		$args['metadata'] = array_merge(
 			$metadata,
 			$this->build_metadata( $ticket_id, $feature, $package )
@@ -1002,7 +1038,10 @@ final class SCAI_Ticket_AI_Service {
 		$workflow_metadata = isset( $package['workflow_metadata'] ) && is_array( $package['workflow_metadata'] ) ? $this->sanitize_metadata( $package['workflow_metadata'] ) : array();
 		$thread_count     = isset( $stats['thread_count'] ) ? absint( $stats['thread_count'] ) : 0;
 		$attachment_count = isset( $stats['attachment_count'] ) ? absint( $stats['attachment_count'] ) : 0;
-		$knowledge_metadata = $this->get_safe_knowledge_metadata( $context );
+		$knowledge_metadata = array_merge(
+			$this->get_safe_knowledge_metadata( $context ),
+			$this->get_safe_custom_knowledge_metadata( $context )
+		);
 
 		return array_merge(
 			array(
@@ -1053,6 +1092,42 @@ final class SCAI_Ticket_AI_Service {
 			'knowledge_doc_ids'    => array_values( array_unique( $ids ) ),
 			'knowledge_doc_titles' => array_values( array_unique( $titles ) ),
 			'knowledge_query'      => isset( $knowledge['query'] ) ? $this->truncate_metadata_text( sanitize_text_field( $knowledge['query'] ), 200 ) : '',
+		);
+	}
+
+	/**
+	 * Build bounded custom knowledge metadata without source content or raw metadata.
+	 *
+	 * @param array<string, mixed> $context Ticket context.
+	 * @return array<string, mixed>
+	 */
+	private function get_safe_custom_knowledge_metadata( array $context ) {
+		$knowledge = isset( $context['custom_knowledge_base'] ) && is_array( $context['custom_knowledge_base'] ) ? $context['custom_knowledge_base'] : array();
+		$documents = isset( $knowledge['documents'] ) && is_array( $knowledge['documents'] ) ? array_slice( $knowledge['documents'], 0, 3 ) : array();
+		$ids       = array();
+		$titles    = array();
+
+		foreach ( $documents as $document ) {
+			if ( ! is_array( $document ) ) {
+				continue;
+			}
+			if ( ! empty( $document['id'] ) ) {
+				$ids[] = absint( $document['id'] );
+			}
+			if ( isset( $document['title'] ) && is_scalar( $document['title'] ) ) {
+				$titles[] = $this->truncate_metadata_text( sanitize_text_field( $document['title'] ), 200 );
+			}
+		}
+
+		if ( empty( $ids ) && empty( $titles ) ) {
+			return array();
+		}
+
+		return array(
+			'custom_knowledge_count'      => count( $documents ),
+			'custom_knowledge_doc_ids'    => array_values( array_unique( $ids ) ),
+			'custom_knowledge_doc_titles' => array_values( array_unique( $titles ) ),
+			'custom_knowledge_query'      => isset( $knowledge['query'] ) ? $this->truncate_metadata_text( sanitize_text_field( $knowledge['query'] ), 200 ) : '',
 		);
 	}
 

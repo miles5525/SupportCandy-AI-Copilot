@@ -68,9 +68,46 @@ final class SCAI_Knowledge_Sources_Page {
 	 */
 	public function __construct() {
 		add_action( 'admin_post_scai_add_manual_knowledge_source', array( $this, 'handle_add_manual_source' ) );
+		add_action( 'admin_post_scai_add_url_knowledge_source', array( $this, 'handle_add_url_source' ) );
 		add_action( 'admin_post_scai_update_manual_knowledge_source', array( $this, 'handle_update_manual_source' ) );
 		add_action( 'admin_post_scai_toggle_knowledge_source_status', array( $this, 'handle_toggle_source_status' ) );
 		add_action( 'admin_post_scai_delete_knowledge_source', array( $this, 'handle_delete_source' ) );
+	}
+
+	/** Add one public URL source. */
+	public function handle_add_url_source() {
+		$this->authorize_post_action( 'scai_add_url_knowledge_source', 'scai_add_url_source_nonce' );
+
+		if ( ! class_exists( 'SCAI_Knowledge_Ingestion_Service' ) ) {
+			$this->redirect_with_notice( 'repository_unavailable' );
+		}
+
+		$posted = wp_unslash( $_POST );
+		$url    = isset( $posted['source_url'] ) && is_scalar( $posted['source_url'] ) ? esc_url_raw( trim( (string) $posted['source_url'] ), array( 'http', 'https' ) ) : '';
+		$title  = isset( $posted['title'] ) && is_scalar( $posted['title'] ) ? sanitize_text_field( (string) $posted['title'] ) : '';
+		$tags   = $this->normalize_tags( isset( $posted['tags'] ) ? $posted['tags'] : '' );
+
+		if ( '' === $url || $this->string_length( $title ) > self::MAX_TITLE_LENGTH || null === $tags ) {
+			$this->redirect_with_notice( 'url_rejected' );
+		}
+
+		$service = new SCAI_Knowledge_Ingestion_Service();
+		$result  = $service->ingest_url(
+			$url,
+			array(
+				'title'   => $title,
+				'tags'    => $tags,
+				'enabled' => isset( $posted['enabled'] ),
+			)
+		);
+
+		if ( ! empty( $result['success'] ) ) {
+			$this->redirect_with_notice( 'url_source_added' );
+		}
+
+		$allowed_errors = array( 'invalid_url', 'url_rejected', 'fetch_failed', 'unsupported_content_type', 'no_readable_text', 'repository_unavailable', 'save_failed' );
+		$error_code     = isset( $result['error_code'] ) ? sanitize_key( $result['error_code'] ) : 'fetch_failed';
+		$this->redirect_with_notice( in_array( $error_code, $allowed_errors, true ) ? $error_code : 'fetch_failed' );
 	}
 
 	/**
@@ -327,6 +364,9 @@ final class SCAI_Knowledge_Sources_Page {
 				<?php $this->render_delete_confirmation( $deleting ); ?>
 			<?php else : ?>
 				<?php $this->render_manual_source_form( $editing, (bool) $repository ); ?>
+				<?php if ( ! $editing ) : ?>
+					<?php $this->render_url_source_form( (bool) $repository ); ?>
+				<?php endif; ?>
 			<?php endif; ?>
 
 			<?php $this->render_search_test( $search_text, $search_result ); ?>
@@ -334,12 +374,6 @@ final class SCAI_Knowledge_Sources_Page {
 			<h2><?php echo esc_html__( 'Other Source Types', 'supportcandy-ai' ); ?></h2>
 			<div class="scai-knowledge-grid">
 				<?php
-				$this->render_source_card(
-					__( 'URL', 'supportcandy-ai' ),
-					__( 'Index a single public web page as a knowledge source.', 'supportcandy-ai' ),
-					__( 'Coming next', 'supportcandy-ai' ),
-					'coming'
-				);
 				$this->render_source_card(
 					__( 'File Upload', 'supportcandy-ai' ),
 					__( 'Upload safe text-like files such as TXT, Markdown, CSV, or logs.', 'supportcandy-ai' ),
@@ -367,6 +401,36 @@ final class SCAI_Knowledge_Sources_Page {
 				</ul>
 			</section>
 		</div>
+		<?php
+	}
+
+	/** Render the single-page URL Source form. */
+	private function render_url_source_form( $repository_available ) {
+		?>
+		<section class="scai-knowledge-card scai-knowledge-form-card">
+			<h2><?php echo esc_html__( 'URL Source', 'supportcandy-ai' ); ?></h2>
+			<p><?php echo esc_html__( 'Add one public page as searchable knowledge. Only one public page is indexed. This does not crawl the full website.', 'supportcandy-ai' ); ?></p>
+			<form class="scai-knowledge-form" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+				<input type="hidden" name="action" value="scai_add_url_knowledge_source" />
+				<?php wp_nonce_field( 'scai_add_url_knowledge_source', 'scai_add_url_source_nonce' ); ?>
+				<p>
+					<label for="scai-url-source-url"><strong><?php echo esc_html__( 'URL', 'supportcandy-ai' ); ?></strong></label>
+					<input id="scai-url-source-url" class="large-text" type="url" name="source_url" required placeholder="https://example.com/help/article" <?php disabled( ! $repository_available ); ?> />
+				</p>
+				<p>
+					<label for="scai-url-source-title"><strong><?php echo esc_html__( 'Title override', 'supportcandy-ai' ); ?></strong></label>
+					<input id="scai-url-source-title" class="regular-text" type="text" name="title" maxlength="<?php echo esc_attr( (string) self::MAX_TITLE_LENGTH ); ?>" <?php disabled( ! $repository_available ); ?> />
+					<span class="description"><?php echo esc_html__( 'Optional. The page title is used when this is empty.', 'supportcandy-ai' ); ?></span>
+				</p>
+				<p>
+					<label for="scai-url-source-tags"><strong><?php echo esc_html__( 'Tags/categories', 'supportcandy-ai' ); ?></strong></label>
+					<input id="scai-url-source-tags" class="regular-text" type="text" name="tags" maxlength="1100" placeholder="billing, refunds, troubleshooting" <?php disabled( ! $repository_available ); ?> />
+					<span class="description"><?php echo esc_html__( 'Optional. Enter up to 20 comma-separated tags.', 'supportcandy-ai' ); ?></span>
+				</p>
+				<p><label><input type="checkbox" name="enabled" value="1" checked <?php disabled( ! $repository_available ); ?> /> <?php echo esc_html__( 'Enable this source for AI retrieval', 'supportcandy-ai' ); ?></label></p>
+				<?php submit_button( __( 'Add URL Source', 'supportcandy-ai' ), 'primary', 'submit', false, $repository_available ? array() : array( 'disabled' => 'disabled' ) ); ?>
+			</form>
+		</section>
 		<?php
 	}
 
@@ -621,6 +685,9 @@ final class SCAI_Knowledge_Sources_Page {
 		<tr>
 			<td>
 				<strong><?php echo esc_html( $source['title'] ); ?></strong>
+				<?php if ( 'url' === $source['source_type'] && ! empty( $source['source_url'] ) ) : ?>
+					<div><a href="<?php echo esc_url( $source['source_url'] ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $source['source_url'] ); ?></a></div>
+				<?php endif; ?>
 				<?php if ( '' !== $excerpt ) : ?>
 					<div class="scai-knowledge-excerpt"><?php echo esc_html( $excerpt ); ?><?php echo $this->string_length( $source['content'] ) > 160 ? esc_html( '…' ) : ''; ?></div>
 				<?php endif; ?>
@@ -642,6 +709,8 @@ final class SCAI_Knowledge_Sources_Page {
 				<div class="scai-knowledge-actions">
 					<?php if ( 'manual' === $source['source_type'] ) : ?>
 						<a class="button button-small" href="<?php echo esc_url( $edit_url ); ?>"><?php echo esc_html__( 'Edit', 'supportcandy-ai' ); ?></a>
+					<?php elseif ( 'url' === $source['source_type'] ) : ?>
+						<span class="scai-knowledge-muted"><?php echo esc_html__( 'Edit/re-index coming next', 'supportcandy-ai' ); ?></span>
 					<?php endif; ?>
 					<?php if ( in_array( $source['status'], array( 'active', 'disabled' ), true ) ) : ?>
 						<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
@@ -688,6 +757,12 @@ final class SCAI_Knowledge_Sources_Page {
 		$map = array(
 			'source_added'           => array( 'success', __( 'Manual text source added.', 'supportcandy-ai' ) ),
 			'source_updated'         => array( 'success', __( 'Manual text source updated.', 'supportcandy-ai' ) ),
+			'url_source_added'       => array( 'success', __( 'URL source added.', 'supportcandy-ai' ) ),
+			'invalid_url'            => array( 'error', __( 'Enter a valid public HTTP or HTTPS URL.', 'supportcandy-ai' ) ),
+			'url_rejected'           => array( 'error', __( 'The URL was rejected because it is invalid, private, or local.', 'supportcandy-ai' ) ),
+			'fetch_failed'           => array( 'error', __( 'The public page could not be fetched.', 'supportcandy-ai' ) ),
+			'unsupported_content_type' => array( 'error', __( 'The URL returned an unsupported content type.', 'supportcandy-ai' ) ),
+			'no_readable_text'       => array( 'error', __( 'No readable text was found on the page.', 'supportcandy-ai' ) ),
 			'source_enabled'         => array( 'success', __( 'Knowledge source enabled.', 'supportcandy-ai' ) ),
 			'source_disabled'        => array( 'success', __( 'Knowledge source disabled.', 'supportcandy-ai' ) ),
 			'source_deleted'         => array( 'success', __( 'Knowledge source deleted.', 'supportcandy-ai' ) ),

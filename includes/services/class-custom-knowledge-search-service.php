@@ -95,7 +95,7 @@ final class SCAI_Custom_Knowledge_Search_Service {
 
 				$score = $this->score_document( $candidate, $terms, $query );
 
-				if ( $score['score'] < $options['min_score'] ) {
+				if ( $score['score'] < $options['min_score'] || empty( $score['relevant'] ) ) {
 					continue;
 				}
 
@@ -103,6 +103,7 @@ final class SCAI_Custom_Knowledge_Search_Service {
 					$candidate,
 					$score['score'],
 					$score['matched_terms'],
+					$score['relevance_reason'],
 					$options['content_limit']
 				);
 			}
@@ -208,7 +209,7 @@ final class SCAI_Custom_Knowledge_Search_Service {
 	 * @param array<string, mixed> $document Repository row.
 	 * @param array<int, string>   $terms    Search terms and phrases.
 	 * @param string               $query    Built query.
-	 * @return array{score: float, matched_terms: array<int, string>}
+	 * @return array{score: float, matched_terms: array<int, string>, relevant: bool, relevance_reason: string}
 	 */
 	protected function score_document( array $document, array $terms, $query ) {
 		$title    = $this->lowercase( $this->normalize_text( isset( $document['title'] ) ? $document['title'] : '' ) );
@@ -226,11 +227,12 @@ final class SCAI_Custom_Knowledge_Search_Service {
 		$query   = $this->lowercase( $this->normalize_text( $query ) );
 		$score   = 0.0;
 		$matched = array();
+		$strong_title_or_tag_matches = array();
+		$non_generic_matches         = array();
+		$meaningful_phrase_match     = false;
 
-		if ( '' !== $query && false !== strpos( $title, $query ) ) {
+		if ( '' !== $query && false !== strpos( $title, $query ) && ( ! $this->is_generic_term( $query ) || $this->is_source_specific_generic_phrase( $query ) ) ) {
 			$score += 12.0;
-		} elseif ( '' !== $query && false !== strpos( $content, $query ) ) {
-			$score += 4.0;
 		}
 
 		foreach ( array_values( array_unique( $terms ) ) as $term ) {
@@ -241,36 +243,67 @@ final class SCAI_Custom_Knowledge_Search_Service {
 			}
 
 			$is_phrase    = false !== strpos( $term, ' ' );
+			$is_generic   = $this->is_generic_term( $term );
+			$is_specific_generic_phrase = $this->is_source_specific_generic_phrase( $term );
 			$term_matched = false;
+			$title_match  = false !== strpos( $title, $term );
+			$tag_match    = false !== strpos( $taxonomy, $term );
+			$content_match = false !== strpos( $content, $term );
 
-			if ( false !== strpos( $title, $term ) ) {
-				$score       += $is_phrase ? 8.0 : 4.0;
+			if ( $title_match ) {
+				$score       += $is_specific_generic_phrase ? 6.0 : ( $is_generic ? 1.0 : ( $is_phrase ? 10.0 : 6.0 ) );
 				$term_matched = true;
 			}
 
-			if ( false !== strpos( $taxonomy, $term ) ) {
-				$score       += $is_phrase ? 5.0 : 3.0;
+			if ( $tag_match ) {
+				$score       += $is_specific_generic_phrase ? 5.0 : ( $is_generic ? 1.0 : ( $is_phrase ? 8.0 : 5.0 ) );
 				$term_matched = true;
 			}
 
 			if ( false !== strpos( $url, $term ) || false !== strpos( $filename, $term ) ) {
-				$score       += $is_phrase ? 4.0 : 2.0;
+				$score       += $is_generic ? 0.5 : ( $is_phrase ? 5.0 : 3.0 );
 				$term_matched = true;
 			}
 
-			if ( false !== strpos( $content, $term ) ) {
-				$score       += $is_phrase ? 3.0 : 1.0;
+			if ( $content_match ) {
+				$score       += $is_generic ? 0.25 : ( $is_phrase ? 3.0 : 1.0 );
 				$term_matched = true;
 			}
 
 			if ( $term_matched ) {
 				$matched[] = $term;
+
+				if ( ! $is_generic ) {
+					$non_generic_matches[] = $term;
+				}
+				if ( ! $is_generic && ( $title_match || $tag_match ) ) {
+					$strong_title_or_tag_matches[] = $term;
+				}
+				if ( $is_phrase && ( ( ! $is_generic && $content_match ) || ( ( ! $is_generic || $is_specific_generic_phrase ) && ( $title_match || $tag_match ) ) ) ) {
+					$meaningful_phrase_match = true;
+				}
 			}
+		}
+
+		$non_generic_matches         = array_values( array_unique( $non_generic_matches ) );
+		$strong_title_or_tag_matches = array_values( array_unique( $strong_title_or_tag_matches ) );
+		$relevance_reason            = '';
+
+		if ( ! empty( $strong_title_or_tag_matches ) ) {
+			$relevance_reason = 'strong_title_or_tag_match';
+		} elseif ( count( $non_generic_matches ) >= 2 ) {
+			$relevance_reason = 'multiple_domain_term_overlap';
+		} elseif ( $meaningful_phrase_match ) {
+			$relevance_reason = 'exact_source_specific_phrase';
+		} elseif ( $score >= 8.0 && ! empty( $non_generic_matches ) ) {
+			$relevance_reason = 'high_score_non_generic_match';
 		}
 
 		return array(
 			'score'         => $score,
 			'matched_terms' => array_values( array_unique( $matched ) ),
+			'relevant'      => '' !== $relevance_reason,
+			'relevance_reason' => $relevance_reason,
 		);
 	}
 
@@ -315,12 +348,12 @@ final class SCAI_Custom_Knowledge_Search_Service {
 	protected function extract_terms( $text ) {
 		$text       = $this->lowercase( $this->normalize_text( $text ) );
 		$terms      = array();
-		$stop_words = array(
-			'the', 'and', 'or', 'with', 'from', 'this', 'that', 'your', 'site', 'issue',
+		$stop_words = array_merge( array(
+			'the', 'and', 'or', 'with', 'from', 'this', 'that', 'your',
 			'please', 'hello', 'thanks', 'support', 'customer', 'user', 'agent', 'ticket',
 			'reply', 'have', 'has', 'was', 'were', 'are', 'for', 'but', 'not', 'you',
 			'our', 'can', 'could', 'would', 'should', 'into', 'when', 'then', 'they',
-		);
+		), $this->get_generic_terms() );
 		$covered_tokens = array();
 
 		foreach ( $this->get_technical_phrases() as $phrase ) {
@@ -484,10 +517,11 @@ final class SCAI_Custom_Knowledge_Search_Service {
 	 * @param array<string, mixed> $document     Repository row.
 	 * @param float                $score        Relevance score.
 	 * @param array<int, string>   $matched      Matched terms.
+	 * @param string               $relevance_reason Safe relevance diagnostic.
 	 * @param int                  $content_limit Per-document limit.
 	 * @return array<string, mixed>
 	 */
-	private function map_document( array $document, $score, array $matched, $content_limit ) {
+	private function map_document( array $document, $score, array $matched, $relevance_reason, $content_limit ) {
 		$metadata   = isset( $document['metadata'] ) && is_array( $document['metadata'] ) ? $document['metadata'] : array();
 		$safe_meta  = array(
 			'tags'        => $this->sanitize_label_list( isset( $metadata['tags'] ) ? $metadata['tags'] : array() ),
@@ -506,6 +540,7 @@ final class SCAI_Custom_Knowledge_Search_Service {
 			'content'       => $content,
 			'score'         => (float) $score,
 			'matched_terms' => $this->sanitize_label_list( $matched ),
+			'relevance_reason' => sanitize_key( $relevance_reason ),
 			'metadata'      => $safe_meta,
 			'source'        => 'custom_knowledge',
 		);
@@ -523,7 +558,7 @@ final class SCAI_Custom_Knowledge_Search_Service {
 			array(
 				'limit'               => 3,
 				'candidate_limit'     => 20,
-				'min_score'           => 2,
+				'min_score'           => 4,
 				'content_limit'       => 3000,
 				'total_content_limit' => 8000,
 			)
@@ -532,7 +567,7 @@ final class SCAI_Custom_Knowledge_Search_Service {
 		return array(
 			'limit'               => min( 5, max( 1, absint( $args['limit'] ) ) ),
 			'candidate_limit'     => min( 50, max( 1, absint( $args['candidate_limit'] ) ) ),
-			'min_score'           => max( 0.0, is_numeric( $args['min_score'] ) ? (float) $args['min_score'] : 2.0 ),
+			'min_score'           => max( 0.0, is_numeric( $args['min_score'] ) ? (float) $args['min_score'] : 4.0 ),
 			'content_limit'       => min( 10000, max( 1, absint( $args['content_limit'] ) ) ),
 			'total_content_limit' => min( 30000, max( 1, absint( $args['total_content_limit'] ) ) ),
 		);
@@ -574,6 +609,37 @@ final class SCAI_Custom_Knowledge_Search_Service {
 			'javascript error',
 			'woocommerce checkout',
 		);
+	}
+
+	/** Get generic support terms that cannot establish relevance on their own. */
+	private function get_generic_terms() {
+		return array(
+			'issue', 'problem', 'error', 'update', 'plugin', 'recent', 'customer', 'support',
+			'troubleshoot', 'troubleshooting', 'conflict', 'debug', 'log', 'logs', 'fatal',
+			'php', 'wordpress', 'website', 'site', 'admin', 'page', 'pages',
+		);
+	}
+
+	/** Determine whether a term or every token in a phrase is generic. */
+	private function is_generic_term( $term ) {
+		$tokens = preg_split( '/\s+/u', $this->lowercase( $this->normalize_text( $term ) ), -1, PREG_SPLIT_NO_EMPTY );
+
+		if ( empty( $tokens ) ) {
+			return true;
+		}
+
+		foreach ( $tokens as $token ) {
+			if ( ! in_array( $token, $this->get_generic_terms(), true ) ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/** Identify generic-token phrases that can be specific when present in a title or tag. */
+	private function is_source_specific_generic_phrase( $term ) {
+		return in_array( $this->lowercase( $this->normalize_text( $term ) ), array( 'fatal error', 'debug log' ), true );
 	}
 
 	/** Sanitize a small label list for returned metadata. */
