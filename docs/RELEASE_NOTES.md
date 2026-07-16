@@ -4,8 +4,9 @@ SupportCandy AI Assistant is an independent plugin. It is not an official Suppor
 
 ## 1. Release Status
 
-- Public beta preparation build.
+- Public beta preparation build currently targeted for management testing.
 - v0.9.1 private beta ZIP install test passed.
+- v0.9.1 development is complete from the development side; management testing will follow after the final package is rebuilt and install-tested.
 - Agent review remains required before using or sending AI-generated content.
 
 ## 2. Highlights
@@ -24,6 +25,7 @@ SupportCandy AI Assistant is an independent plugin. It is not an official Suppor
 ## 3. New in 0.9.1
 
 - Added a setting to enable BetterDocs knowledge.
+- Added a Getting Started page with a setup checklist for initial configuration and verification.
 - Added a safe, read-only BetterDocs adapter for published public documentation.
 - Added deterministic Knowledge Search Service retrieval and relevance scoring.
 - Added BetterDocs detection to System Check.
@@ -39,6 +41,7 @@ SupportCandy AI Assistant is an independent plugin. It is not an official Suppor
 - Improved BetterDocs and attachment diagnostics.
 - Improved safe metadata handling so article bodies and raw prompts are not stored in usage or conversation metadata.
 - Improved failure handling when optional BetterDocs or image capabilities are unavailable.
+- Simplified the admin menu by removing the duplicate SupportCandy AI submenu; the top-level menu now opens Getting Started.
 
 ## 5. Known Limitations
 
@@ -66,10 +69,10 @@ SupportCandy AI Assistant is an independent plugin. It is not an official Suppor
 - Re-test the configured provider connection after upgrading.
 - Re-run System Check and confirm agent permissions after upgrading.
 
-## 8. Tester Notes
+## 8. Management Test Notes
 
 - Test the plugin on a staging site before production use.
 - Review every AI summary, reply, improved draft, and merged draft before relying on or sending it.
-- Report provider errors, permission problems, missing or incorrect ticket context, and BetterDocs relevance issues.
+- During management testing, report provider errors, permission problems, missing or incorrect ticket context, and BetterDocs relevance issues.
 - Include the WordPress, PHP, SupportCandy, BetterDocs, provider, and model versions in useful bug reports.
 - Do not include API keys, private ticket content, or other secrets in reports.

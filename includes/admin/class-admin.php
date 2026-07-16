@@ -57,6 +57,13 @@ final class SCAI_Admin {
 	private $permissions_page = null;
 
 	/**
+	 * Knowledge Sources page instance.
+	 *
+	 * @var SCAI_Knowledge_Sources_Page|null
+	 */
+	private $knowledge_sources_page = null;
+
+	/**
 	 * Diagnostics page instance.
 	 *
 	 * @var SCAI_Diagnostics_Page|null
@@ -104,6 +111,10 @@ final class SCAI_Admin {
 		if ( class_exists( 'SCAI_Permissions_Page' ) ) {
 			$this->permissions_page = new SCAI_Permissions_Page();
 			$this->permissions_page->init();
+		}
+
+		if ( class_exists( 'SCAI_Knowledge_Sources_Page' ) ) {
+			$this->knowledge_sources_page = new SCAI_Knowledge_Sources_Page();
 		}
 
 		if ( class_exists( 'SCAI_Diagnostics_Page' ) ) {
@@ -173,6 +184,15 @@ final class SCAI_Admin {
 			self::CAPABILITY,
 			'scai-permissions',
 			array( $this, 'render_permissions_page' )
+		);
+
+		add_submenu_page(
+			self::MENU_SLUG,
+			esc_html__( 'Knowledge Sources', 'supportcandy-ai' ),
+			esc_html__( 'Knowledge Sources', 'supportcandy-ai' ),
+			self::CAPABILITY,
+			'scai-knowledge-sources',
+			array( $this, 'render_knowledge_sources_page' )
 		);
 
 		add_submenu_page(
@@ -286,6 +306,30 @@ final class SCAI_Admin {
 		}
 
 		$this->render_missing_permissions_page_notice();
+	}
+
+	/**
+	 * Render Knowledge Sources page.
+	 *
+	 * @return void
+	 */
+	public function render_knowledge_sources_page() {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die(
+				esc_html__( 'You do not have permission to access this page.', 'supportcandy-ai' ),
+				esc_html__( 'Permission denied', 'supportcandy-ai' ),
+				array(
+					'response' => 403,
+				)
+			);
+		}
+
+		if ( class_exists( 'SCAI_Knowledge_Sources_Page' ) && $this->knowledge_sources_page instanceof SCAI_Knowledge_Sources_Page ) {
+			$this->knowledge_sources_page->render();
+			return;
+		}
+
+		$this->render_missing_knowledge_sources_page_notice();
 	}
 
 	/**
@@ -419,6 +463,23 @@ final class SCAI_Admin {
 					);
 					?>
 				</p>
+			</div>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Render fallback notice when Knowledge Sources is unavailable.
+	 *
+	 * @return void
+	 */
+	private function render_missing_knowledge_sources_page_notice() {
+		?>
+		<div class="wrap scai-admin-page">
+			<h1><?php echo esc_html__( 'Knowledge Sources', 'supportcandy-ai' ); ?></h1>
+
+			<div class="notice notice-error">
+				<p><?php echo esc_html__( 'Knowledge Sources page is unavailable. Please check the plugin installation.', 'supportcandy-ai' ); ?></p>
 			</div>
 		</div>
 		<?php

@@ -51,6 +51,8 @@ Frontend/Backend Popup
 - AI Permissions page
 - System Check page
 - Usage Logs page
+- Getting Started / Setup Checklist page
+- Admin menu cleanup: top-level SupportCandy AI opens Getting Started with no duplicate submenu
 - BetterDocs Knowledge Base MVP complete
 - BetterDocs setting and safe read-only public document adapter
 - Deterministic BetterDocs Knowledge Search Service
@@ -111,12 +113,18 @@ http://localhost/supportcandy-ai-test/wp-admin/admin.php?page=scai-diagnostics
 Usage Logs:
 http://localhost/supportcandy-ai-test/wp-admin/admin.php?page=scai-usage-logs
 
+Getting Started:
+http://localhost/supportcandy-ai-test/wp-admin/admin.php?page=scai-getting-started
+
 ## Current Product Status
 BetterDocs Knowledge Base MVP: COMPLETE
 
-The plugin is ready for the next private beta package.
+SupportCandy AI Assistant v0.9.1 development is complete from the development side.
+
+Current package target: management test build. External tester handoff documents are intentionally excluded, and management testing will happen later.
 
 ## Next Product Phase
-- Create the next private beta ZIP.
-- Run a clean install and upgrade test using the ZIP.
-- Continue with UI polish and public beta preparation after package verification.
+- Rebuild the final v0.9.1 management-test ZIP.
+- Run a clean install and upgrade test using the rebuilt ZIP.
+- Hand off for management testing when scheduled.
+- Continue with UI polish and public beta preparation after management package verification.

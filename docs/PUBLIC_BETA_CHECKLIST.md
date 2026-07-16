@@ -1,12 +1,13 @@
 # SupportCandy AI Assistant Public Beta Checklist
 
-Use this checklist for the v0.9.1 public beta candidate. Complete testing on staging before inviting selected testers.
+Use this checklist first for the v0.9.1 management-test build and later for public beta preparation. Management testing has not started yet; complete package and staging checks before handoff.
 
 ## 1. Pre-release Checks
 
 - [ ] Plugin version is `0.9.1` in all direct plugin version references.
 - [ ] `readme.txt` is complete and reviewed.
 - [ ] Release notes are complete and reviewed.
+- [ ] External tester handoff documents are absent from the management-test package by design.
 - [ ] License and independent-plugin disclaimer are correct.
 - [ ] ZIP excludes internal and private documentation.
 - [ ] ZIP excludes `.git`, `.vscode`, `.agents`, and `.codex`.
@@ -20,7 +21,10 @@ Use this checklist for the v0.9.1 public beta candidate. Complete testing on sta
 - [ ] Plugin deactivates successfully.
 - [ ] Uninstall preserves plugin data by default.
 - [ ] Optional uninstall cleanup works only when explicitly enabled.
-- [ ] Settings, Provider, AI Permissions, System Check, and Usage Logs pages open successfully.
+- [ ] Getting Started, Settings, AI Providers, AI Permissions, System Check, and Usage Logs pages open successfully.
+- [ ] The top-level SupportCandy AI menu opens Getting Started.
+- [ ] Getting Started is the first visible submenu and no duplicate SupportCandy AI submenu appears.
+- [ ] The Getting Started setup checklist reflects the current configuration state.
 - [ ] Existing settings remain intact after upgrade.
 
 ## 3. SupportCandy Tests
@@ -104,9 +108,9 @@ Use this checklist for the v0.9.1 public beta candidate. Complete testing on sta
 - [ ] Upgrade QA passed.
 - [ ] Package QA passed.
 - [ ] Privacy and permissions review passed.
-- [ ] Known limitations are documented for testers.
+- [ ] Known limitations are documented for management review.
 - [ ] Release commit and package checksum are recorded.
-- [ ] Public beta candidate is ready for selected testers.
+- [ ] Management-test build is ready for management handoff.
 
 Sign-off owner: ____________________
 

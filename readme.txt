@@ -31,6 +31,7 @@ AI actions run only when an authorized support agent requests them. The plugin d
 * Read bounded excerpts from supported text and log attachments.
 * Optionally include supported images for AI visual inspection.
 * Optionally use relevant published BetterDocs articles as supporting knowledge.
+* Follow a Getting Started setup checklist for provider, permissions, diagnostics, and optional features.
 * Run system checks for SupportCandy, attachments, image support, and BetterDocs availability.
 
 == Requirements ==
@@ -91,18 +92,20 @@ Review your provider configuration and privacy obligations before enabling AI fe
 2. Install and activate SupportCandy.
 3. Upload the SupportCandy AI Assistant ZIP through Plugins > Add New > Upload Plugin, or copy the plugin directory into `/wp-content/plugins/`.
 4. Activate SupportCandy AI Assistant.
-5. Open the SupportCandy AI settings pages and configure the provider, permissions, and optional features.
-6. Run System Check before using AI actions on live tickets.
+5. Open SupportCandy AI to view the Getting Started checklist.
+6. Configure the provider, permissions, and optional features.
+7. Run System Check before using AI actions on live tickets.
 
 == Configuration ==
 
-1. Open the AI provider settings and configure an OpenAI-compatible endpoint, API key, and model.
-2. Test the provider connection.
-3. Open AI Permissions and select the SupportCandy agent roles allowed to use AI features.
-4. Review conversation retention and uninstall cleanup settings.
-5. Optionally enable image understanding after confirming that the model supports images.
-6. Optionally install and activate BetterDocs, publish documentation, and enable BetterDocs knowledge.
-7. Use System Check to verify ticket access, attachments, images, and BetterDocs detection.
+1. Open SupportCandy AI. The top-level menu opens the Getting Started setup checklist.
+2. Open AI Providers and configure an OpenAI-compatible endpoint, API key, and model.
+3. Test the provider connection.
+4. Open AI Permissions and select the SupportCandy agent roles allowed to use AI features.
+5. Review conversation retention and uninstall cleanup settings.
+6. Optionally enable image understanding after confirming that the model supports images.
+7. Optionally install and activate BetterDocs, publish documentation, and enable BetterDocs knowledge.
+8. Use System Check to verify ticket access, attachments, images, and BetterDocs detection.
 
 == Frequently Asked Questions ==
 
@@ -148,13 +151,14 @@ Version 0.9.1 is beta software. It has been private-beta tested, but site owners
 
 == Screenshots ==
 
-1. SupportCandy AI Assistant settings and optional feature controls.
-2. OpenAI-compatible provider configuration and connection test.
-3. SupportCandy agent-role AI permissions.
-4. AI assistant actions in a SupportCandy ticket.
-5. AI conversation history popup.
-6. System Check with attachment, image, and BetterDocs diagnostics.
-7. Usage Logs administration page.
+1. Getting Started setup checklist.
+2. SupportCandy AI Assistant settings and optional feature controls.
+3. OpenAI-compatible provider configuration and connection test.
+4. SupportCandy agent-role AI permissions.
+5. AI assistant actions in a SupportCandy ticket.
+6. AI conversation history popup.
+7. System Check with attachment, image, and BetterDocs diagnostics.
+8. Usage Logs administration page.
 
 == Changelog ==
 
@@ -166,6 +170,7 @@ Version 0.9.1 is beta software. It has been private-beta tested, but site owners
 * Improved AI reply formatting to avoid subject lines and placeholder signatures.
 * Improved BetterDocs-guided replies, improve draft, and merge draft flows.
 * Added final private beta hardening.
+* Added a Getting Started setup checklist and streamlined the admin menu.
 
 = 0.9.0 =
 
