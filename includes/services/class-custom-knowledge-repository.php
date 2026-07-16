@@ -759,7 +759,7 @@ final class SCAI_Custom_Knowledge_Repository {
 	 */
 	private function sanitize_mime_type( $mime_type ) {
 		$mime_type = is_scalar( $mime_type ) ? strtolower( sanitize_text_field( (string) $mime_type ) ) : '';
-		$mime_type = preg_replace( '#[^a-z0-9!#$&^_.+\-/]#', '', $mime_type );
+		$mime_type = preg_replace( '~[^a-z0-9!#$&^_.+\-/]~', '', $mime_type );
 
 		return is_string( $mime_type ) ? substr( $mime_type, 0, 100 ) : '';
 	}

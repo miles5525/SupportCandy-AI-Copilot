@@ -386,8 +386,124 @@
 	margin: 24px 0;
 }
 
+.scai-knowledge-form-card,
+.scai-knowledge-delete-confirmation {
+	margin: 16px 0 28px;
+	padding: 20px 24px;
+}
+
+.scai-knowledge-form {
+	max-width: 900px;
+}
+
+.scai-knowledge-form > p > label > strong {
+	display: block;
+	margin-bottom: 6px;
+}
+
+.scai-knowledge-form input[type="text"] {
+	width: 100%;
+	max-width: 700px;
+}
+
+.scai-knowledge-form textarea {
+	width: 100%;
+	min-height: 240px;
+	border-color: var(--scai-admin-border);
+	border-radius: var(--scai-admin-control-radius);
+}
+
+.scai-knowledge-form .description {
+	display: block;
+	margin-top: 5px;
+}
+
+.scai-knowledge-list-wrap {
+	overflow-x: auto;
+}
+
+.scai-knowledge-list {
+	min-width: 920px;
+}
+
+.scai-knowledge-list th,
+.scai-knowledge-list td {
+	vertical-align: top;
+}
+
+.scai-knowledge-actions {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.scai-knowledge-actions form,
+.scai-knowledge-actions .button {
+	margin: 0;
+}
+
+.scai-knowledge-tag {
+	display: inline-block;
+	margin: 0 4px 4px 0;
+	padding: 2px 7px;
+	border-radius: 999px;
+	background: #f0f0f1;
+	font-size: 12px;
+}
+
+.scai-knowledge-danger {
+	border-color: #d63638 !important;
+	color: #b32d2e !important;
+}
+
+.scai-knowledge-danger:hover,
+.scai-knowledge-danger:focus {
+	border-color: #b32d2e !important;
+	color: #8a2424 !important;
+}
+
+.scai-knowledge-muted,
+.scai-knowledge-excerpt {
+	color: #646970;
+}
+
+.scai-knowledge-excerpt {
+	max-width: 320px;
+	margin-top: 5px;
+	font-size: 12px;
+	line-height: 1.5;
+}
+
+.scai-knowledge-status-active {
+	background: #dff6dd;
+	color: #0a5c20;
+}
+
+.scai-knowledge-status-disabled,
+.scai-knowledge-status-unsupported {
+	background: #f0f0f1;
+	color: #50575e;
+}
+
+.scai-knowledge-status-pending {
+	background: #e8f1fb;
+	color: #135e96;
+}
+
+.scai-knowledge-status-error {
+	background: #fce8e8;
+	color: #8a2424;
+}
+
 @media (max-width: 782px) {
 	.scai-knowledge-grid {
 		grid-template-columns: 1fr;
+	}
+
+	.scai-knowledge-form-card,
+	.scai-knowledge-delete-confirmation,
+	.scai-knowledge-existing {
+		padding: 16px;
 	}
 }
