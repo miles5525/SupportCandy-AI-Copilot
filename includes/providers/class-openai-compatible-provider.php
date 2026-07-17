@@ -39,15 +39,26 @@ final class SCAI_OpenAI_Compatible_Provider extends SCAI_Abstract_Provider {
 	 */
 	private $http_client;
 
+	/** @var SCAI_Provider_Preset */
+	private $preset;
+
 	/**
 	 * Create provider instance.
 	 *
-	 * @param SCAI_HTTP_Client|null $http_client Optional HTTP client.
+	 * @param SCAI_HTTP_Client|null              $http_client Optional HTTP client.
+	 * @param SCAI_Provider_Preset|array|null    $preset      Optional provider preset metadata.
 	 */
-	public function __construct( $http_client = null ) {
+	public function __construct( $http_client = null, $preset = null ) {
 		$this->http_client = $http_client instanceof SCAI_HTTP_Client
 			? $http_client
 			: new SCAI_HTTP_Client();
+		$this->preset      = $preset instanceof SCAI_Provider_Preset
+			? $preset
+			: new SCAI_Provider_Preset(
+				is_array( $preset )
+					? wp_parse_args( $preset, $this->get_default_preset_data() )
+					: $this->get_default_preset_data()
+			);
 	}
 
 	/**
@@ -56,7 +67,7 @@ final class SCAI_OpenAI_Compatible_Provider extends SCAI_Abstract_Provider {
 	 * @return string
 	 */
 	public function get_key() {
-		return self::PROVIDER_KEY;
+		return $this->preset->get( 'key', self::PROVIDER_KEY );
 	}
 
 	/**
@@ -65,7 +76,7 @@ final class SCAI_OpenAI_Compatible_Provider extends SCAI_Abstract_Provider {
 	 * @return string
 	 */
 	public function get_name() {
-		return __( 'OpenAI Compatible', 'supportcandy-ai' );
+		return $this->preset->get( 'label', __( 'OpenAI Compatible', 'supportcandy-ai' ) );
 	}
 
 	/**
@@ -74,10 +85,7 @@ final class SCAI_OpenAI_Compatible_Provider extends SCAI_Abstract_Provider {
 	 * @return string
 	 */
 	public function get_description() {
-		return __(
-			'Connect to OpenAI-compatible chat completion APIs such as OpenAI, OpenRouter, Groq, DeepSeek, and self-hosted compatible endpoints.',
-			'supportcandy-ai'
-		);
+		return $this->preset->get( 'description', '' );
 	}
 
 	/**
@@ -86,7 +94,7 @@ final class SCAI_OpenAI_Compatible_Provider extends SCAI_Abstract_Provider {
 	 * @return string
 	 */
 	public function get_default_model() {
-		return 'gpt-4o-mini';
+		return $this->preset->get( 'default_model', 'gpt-4o-mini' );
 	}
 
 	/**
@@ -98,15 +106,18 @@ final class SCAI_OpenAI_Compatible_Provider extends SCAI_Abstract_Provider {
 	 * @return array<string, string>
 	 */
 	public function get_available_models() {
-		return array(
-			'gpt-4o-mini'                    => 'GPT-4o mini',
-			'gpt-4o'                         => 'GPT-4o',
-			'openai/gpt-4o-mini'             => 'OpenRouter: GPT-4o mini',
-			'openai/gpt-4o'                  => 'OpenRouter: GPT-4o',
-			'meta-llama/llama-3.1-8b-instant' => 'Groq: Llama 3.1 8B Instant',
-			'deepseek-chat'                  => 'DeepSeek Chat',
-			'custom'                         => __( 'Custom model', 'supportcandy-ai' ),
-		);
+		return $this->get_model_suggestions();
+	}
+
+	/** Get editable model suggestions supplied by the preset. */
+	public function get_model_suggestions() {
+		$models = $this->preset->get( 'model_suggestions', array() );
+		return is_array( $models ) ? $models : array();
+	}
+
+	/** Get normalized preset metadata for future registry-driven UI. */
+	public function get_preset() {
+		return $this->preset;
 	}
 
 	/**
@@ -117,7 +128,7 @@ final class SCAI_OpenAI_Compatible_Provider extends SCAI_Abstract_Provider {
 	 * @return bool
 	 */
 	public function supports_images() {
-		return true;
+		return (bool) $this->preset->get( 'supports_images', true );
 	}
 
 	/**
@@ -128,7 +139,7 @@ final class SCAI_OpenAI_Compatible_Provider extends SCAI_Abstract_Provider {
 	 * @return bool
 	 */
 	public function supports_streaming() {
-		return false;
+		return (bool) $this->preset->get( 'supports_streaming', false );
 	}
 
 	/**
@@ -272,12 +283,43 @@ final class SCAI_OpenAI_Compatible_Provider extends SCAI_Abstract_Provider {
 	 */
 	private function build_chat_completions_endpoint( $base_url ) {
 		$base_url = untrailingslashit( esc_url_raw( (string) $base_url ) );
+		$path     = (string) $this->preset->get( 'endpoint_path', self::CHAT_COMPLETIONS_PATH );
 
-		if ( preg_match( '#/chat/completions$#', $base_url ) ) {
+		if ( substr( $base_url, -strlen( $path ) ) === $path ) {
 			return $base_url;
 		}
 
-		return $base_url . self::CHAT_COMPLETIONS_PATH;
+		return $base_url . $path;
+	}
+
+	/** Get metadata matching the provider's pre-preset behavior exactly. */
+	private function get_default_preset_data() {
+		return array(
+			'key'                         => self::PROVIDER_KEY,
+			'label'                       => __( 'OpenAI Compatible', 'supportcandy-ai' ),
+			'description'                 => __( 'Connect to OpenAI-compatible chat completion APIs such as OpenAI, OpenRouter, Groq, DeepSeek, and self-hosted compatible endpoints.', 'supportcandy-ai' ),
+			'default_base_url'            => '',
+			'default_model'               => 'gpt-4o-mini',
+			'model_suggestions'           => array(
+				'gpt-4o-mini'                    => 'GPT-4o mini',
+				'gpt-4o'                         => 'GPT-4o',
+				'openai/gpt-4o-mini'             => 'OpenRouter: GPT-4o mini',
+				'openai/gpt-4o'                  => 'OpenRouter: GPT-4o',
+				'meta-llama/llama-3.1-8b-instant' => 'Groq: Llama 3.1 8B Instant',
+				'deepseek-chat'                  => 'DeepSeek Chat',
+				'custom'                         => __( 'Custom model', 'supportcandy-ai' ),
+			),
+			'api_key_label'               => __( 'API Key', 'supportcandy-ai' ),
+			'supports_images'             => true,
+			'supports_streaming'          => false,
+			'base_url_editable'           => true,
+			'model_editable'              => true,
+			'organization_project_fields' => true,
+			'setup_help'                  => '',
+			'warning_text'                => '',
+			'endpoint_path'               => self::CHAT_COMPLETIONS_PATH,
+			'legacy_keys'                 => array(),
+		);
 	}
 
 	/**

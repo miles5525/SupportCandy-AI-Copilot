@@ -86,6 +86,7 @@ if ( ! class_exists( 'SCAI_Loader' ) ) {
 				// Providers.
 				SCAI_PLUGIN_PATH . 'includes/providers/interface-provider.php',
 				SCAI_PLUGIN_PATH . 'includes/providers/abstract-provider.php',
+				SCAI_PLUGIN_PATH . 'includes/providers/class-provider-preset.php',
 				SCAI_PLUGIN_PATH . 'includes/providers/class-openai-compatible-provider.php',
 				SCAI_PLUGIN_PATH . 'includes/providers/class-provider-manager.php',
 				SCAI_PLUGIN_PATH . 'includes/services/class-provider-registry.php',
