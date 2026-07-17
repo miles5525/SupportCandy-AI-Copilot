@@ -1,5 +1,7 @@
 # Multiple AI Providers Architecture Audit
 
+> **Roadmap status:** Future planning only. Multiple providers, Gemini presets, and a custom provider are not implemented in the current v0.9.2 management build.
+
 ## 1. Purpose and decision summary
 
 This audit defines a low-risk path from the v0.9.2 single OpenAI-compatible configuration to the v0.9.3 multiple-provider milestone. It is an implementation plan only. It does not change plugin code, provider settings, the AI Engine, or the database schema.
