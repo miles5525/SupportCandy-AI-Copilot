@@ -61,6 +61,13 @@ Frontend/Backend Popup
 - Suggested Knowledge References in summaries when relevant documents are included
 - Reply body formatting without generated subject lines or placeholder signatures
 - BetterDocs integration hardening review complete
+- Custom Knowledge Base / RAG MVP complete
+- Knowledge Sources admin page with manual text, URL, and file sources
+- TXT, Markdown, CSV, LOG, and JSON knowledge file support
+- Safe unsupported PDF handling unless an approved extractor is available
+- Deterministic Custom Knowledge Search Service with relevance gating
+- Custom knowledge context in Summary, Reply, Improve Current Draft, and Merge with my draft
+- Custom Knowledge checks in System Check and Getting Started
 
 ## Security Rules
 - WordPress administrator must not bypass SupportCandy AI access rules.
@@ -119,12 +126,18 @@ http://localhost/supportcandy-ai-test/wp-admin/admin.php?page=scai-getting-start
 ## Current Product Status
 BetterDocs Knowledge Base MVP: COMPLETE
 
-SupportCandy AI Assistant v0.9.1 development is complete from the development side.
+Custom Knowledge Base / RAG MVP: COMPLETE
 
-Current package target: management test build. External tester handoff documents are intentionally excluded, and management testing will happen later.
+SupportCandy AI Assistant v0.9.2 RAG development is complete from the development side.
+
+Current package target: `supportcandy-ai-v0.9.2-rag-management-test.zip`. External tester handoff documents are intentionally excluded, and management testing will happen later.
 
 ## Next Product Phase
-- Rebuild the final v0.9.1 management-test ZIP.
-- Run a clean install and upgrade test using the rebuilt ZIP.
+- Build `supportcandy-ai-v0.9.2-rag-management-test.zip`.
+- Run a clean install and upgrade test using the v0.9.2 package.
 - Hand off for management testing when scheduled.
 - Continue with UI polish and public beta preparation after management package verification.
+- Plan multiple AI provider options next:
+  - Gemini Free
+  - Gemini Pro/Paid
+  - Custom OpenAI-compatible provider

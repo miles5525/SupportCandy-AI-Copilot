@@ -18,14 +18,26 @@
 - BetterDocs final hardening review completed.
 - Getting Started / Setup Checklist page completed.
 - Admin menu cleanup completed: the top-level SupportCandy AI menu opens Getting Started and the duplicate submenu was removed.
+- Custom Knowledge Base / RAG MVP completed and hardened.
+- Knowledge Sources administration for manual text, URL, and file upload sources completed.
+- TXT, Markdown, CSV, LOG, and JSON source extraction completed.
+- Safe unsupported PDF handling completed for installations without an approved extractor.
+- Custom knowledge retrieval, relevance gating, AI context integration, System Check, and Getting Started support completed.
+- RAG uses the existing `scai_knowledge` table; no database schema change was required.
 - External tester handoff documentation intentionally removed because this package is for management testing.
 
 ## Package Status
-v0.9.1 private beta ZIP install test passed.
+v0.9.1 private beta ZIP install test passed and remains the previous verified package baseline.
 
-v0.9.1 development is complete from the development side.
+v0.9.2 RAG MVP development is complete from the development side.
 
-Current package target: final management-test build. Management testing will happen later.
+Current package target: `supportcandy-ai-v0.9.2-rag-management-test.zip`. Management testing will happen later.
 
 ## Next Phase
-Rebuild the final v0.9.1 management-test ZIP and install-test it, then hand it off for management testing when scheduled. Continue with UI polish and public beta preparation after package verification.
+Build and install-test `supportcandy-ai-v0.9.2-rag-management-test.zip`, then hand it off for management testing when scheduled.
+
+Multiple AI providers are planned next:
+
+- Gemini Free
+- Gemini Pro/Paid
+- Custom OpenAI-compatible provider

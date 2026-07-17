@@ -1,10 +1,10 @@
 # SupportCandy AI Assistant Public Beta Checklist
 
-Use this checklist first for the v0.9.1 management-test build and later for public beta preparation. Management testing has not started yet; complete package and staging checks before handoff.
+Use this checklist first for the v0.9.2 RAG management-test build and later for public beta preparation. Management testing has not started yet; complete package and staging checks before handoff.
 
 ## 1. Pre-release Checks
 
-- [ ] Plugin version is `0.9.1` in all direct plugin version references.
+- [ ] Plugin version is `0.9.2` in all direct plugin version references.
 - [ ] `readme.txt` is complete and reviewed.
 - [ ] Release notes are complete and reviewed.
 - [ ] External tester handoff documents are absent from the management-test package by design.
@@ -80,7 +80,25 @@ Use this checklist first for the v0.9.1 management-test build and later for publ
 - [ ] Unsupported provider or model falls back safely without false inspection claims.
 - [ ] Base64 image data is not stored in history or logs.
 
-## 8. Security and Privacy Checks
+## 8. Custom Knowledge / RAG Tests
+
+- [ ] A manual source can be added, edited, disabled, enabled, searched, and deleted.
+- [ ] A public URL source can be added, searched, disabled, and deleted.
+- [ ] A supported file source can be uploaded, searched, disabled, and deleted.
+- [ ] TXT, Markdown, CSV, LOG, and JSON uploads are processed safely.
+- [ ] Invalid, executable, binary, spoofed, and oversized files are rejected safely.
+- [ ] Localhost, loopback, private, internal, and credential-bearing URLs are rejected.
+- [ ] A PDF without an approved extractor shows the unsupported message and is not retrieved.
+- [ ] Custom Knowledge Search returns a relevant result for a matching query.
+- [ ] A WooCommerce checkout source matches a WooCommerce checkout/payment query.
+- [ ] The same source does not match an unrelated fatal-error/undefined-method query.
+- [ ] AI Summary includes an exact Custom Knowledge reference only when a relevant source is included.
+- [ ] AI Reply uses relevant custom knowledge naturally without dumping source content.
+- [ ] Improve Current Draft and Merge with my draft use relevant custom knowledge without overriding agent intent.
+- [ ] Disabled, pending, error, and unsupported sources are never retrieved.
+- [ ] No local paths, API keys, secrets, raw metadata, raw prompts, or full source content are exposed in admin results, logs, or AI metadata.
+
+## 9. Security and Privacy Checks
 
 - [ ] All state-changing requests verify nonces.
 - [ ] Admin and AI actions enforce the required capabilities and SupportCandy permissions.
@@ -91,17 +109,17 @@ Use this checklist first for the v0.9.1 management-test build and later for publ
 - [ ] Raw prompts and full BetterDocs article bodies are not stored in logs or metadata.
 - [ ] Conversation retention and agent scoping work as configured.
 
-## 9. Packaging Checks
+## 10. Packaging Checks
 
 - [ ] Release ZIP installs successfully through WordPress admin.
 - [ ] ZIP has the root folder `supportcandy-ai`.
 - [ ] ZIP contains required PHP, JavaScript, CSS, language, and public documentation files.
 - [ ] ZIP does not include `AI_CONTEXT.md`, internal/private files, audits, development settings, or editor metadata.
 - [ ] ZIP does not include `.git`, `.vscode`, `.agents`, `.codex`, logs, SQL files, backups, temporary files, or previous packages.
-- [ ] Installed plugin reports version `0.9.1`.
+- [ ] Installed plugin reports version `0.9.2`.
 - [ ] Installed files match the release commit.
 
-## 10. Final Sign-off
+## 11. Final Sign-off
 
 - [ ] Local QA passed.
 - [ ] Fresh-install QA passed.

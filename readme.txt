@@ -1,14 +1,14 @@
 === SupportCandy AI Assistant ===
 Contributors: webizons
-Tags: supportcandy, ai, support, tickets, helpdesk, openai, betterdocs
+Tags: supportcandy, ai, support, tickets, helpdesk, openai, betterdocs, rag, knowledge base
 Requires at least: 6.0
 Tested up to: 7.0.1
 Requires PHP: 7.4
-Stable tag: 0.9.1
+Stable tag: 0.9.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-AI-assisted ticket summaries, reply drafting, and optional BetterDocs knowledge for SupportCandy helpdesks.
+AI-assisted ticket summaries, reply drafting, and retrieved BetterDocs or custom knowledge for SupportCandy helpdesks.
 
 == Description ==
 
@@ -31,6 +31,8 @@ AI actions run only when an authorized support agent requests them. The plugin d
 * Read bounded excerpts from supported text and log attachments.
 * Optionally include supported images for AI visual inspection.
 * Optionally use relevant published BetterDocs articles as supporting knowledge.
+* Build a Custom Knowledge Base from trusted manual text, public URLs, and uploaded files.
+* Retrieve relevant custom knowledge as supporting context for summaries, replies, improved drafts, and merged drafts.
 * Follow a Getting Started setup checklist for provider, permissions, diagnostics, and optional features.
 * Run system checks for SupportCandy, attachments, image support, and BetterDocs availability.
 
@@ -63,6 +65,14 @@ When relevant articles are found:
 
 The integration is read-only. It does not modify BetterDocs content, write BetterDocs search analytics, or retrieve draft, private, or password-protected articles.
 
+== Custom Knowledge Base / RAG ==
+
+Administrators can add trusted Custom Knowledge Base sources using manual text, a public URL, or a file upload. Supported uploaded file types are TXT, Markdown, CSV, LOG, and JSON.
+
+PDF extraction requires an approved extractor connected through the plugin's PDF extraction hook. Without one, an uploaded PDF is safely marked unsupported and is not used as AI context.
+
+The plugin uses deterministic retrieval and relevance checks to select bounded excerpts as supporting context. This does not train the AI model. Ticket and customer facts remain primary, and agents must review all AI output before sending or relying on it.
+
 == Image Understanding ==
 
 Image understanding is optional and disabled by default for new installations. When enabled and supported by the configured provider, selected ticket images may be included in the AI request for visual inspection.
@@ -71,7 +81,7 @@ Image support depends on the selected model and provider. Agents should verify v
 
 == Privacy and Data ==
 
-When an authorized agent uses an AI action, relevant ticket content may be sent to the configured AI provider. Depending on the request, this can include ticket fields, conversation messages, bounded text attachment excerpts, selected images, and relevant public BetterDocs content.
+When an authorized agent uses an AI action, relevant ticket content may be sent to the configured AI provider. Depending on the request, this can include ticket fields, conversation messages, bounded text attachment excerpts, selected images, relevant public BetterDocs content, and bounded excerpts retrieved from active Custom Knowledge Base sources.
 
 Important privacy considerations:
 
@@ -105,7 +115,8 @@ Review your provider configuration and privacy obligations before enabling AI fe
 5. Review conversation retention and uninstall cleanup settings.
 6. Optionally enable image understanding after confirming that the model supports images.
 7. Optionally install and activate BetterDocs, publish documentation, and enable BetterDocs knowledge.
-8. Use System Check to verify ticket access, attachments, images, and BetterDocs detection.
+8. Optionally add trusted manual, URL, or file sources under Knowledge Sources.
+9. Use System Check to verify ticket access, attachments, images, BetterDocs detection, and Custom Knowledge retrieval.
 
 == Frequently Asked Questions ==
 
@@ -147,7 +158,7 @@ No. AI output can be incomplete or incorrect. Agents should verify facts, troubl
 
 = Is this release production ready? =
 
-Version 0.9.1 is beta software. It has been private-beta tested, but site owners should use staging, backups, limited permissions, and careful monitoring before production deployment.
+Version 0.9.2 is beta software. Site owners should use staging, backups, limited permissions, and careful monitoring before production deployment.
 
 == Screenshots ==
 
@@ -161,6 +172,16 @@ Version 0.9.1 is beta software. It has been private-beta tested, but site owners
 8. Usage Logs administration page.
 
 == Changelog ==
+
+= 0.9.2 =
+
+* Added Custom Knowledge Base / RAG MVP using the existing knowledge table.
+* Added manual text, public URL, and file upload knowledge sources.
+* Added TXT, Markdown, CSV, LOG, and JSON extraction with safe unsupported PDF handling.
+* Added deterministic custom knowledge search and relevance gating.
+* Added custom knowledge context to Summary, Generate Reply, Improve Current Draft, and Merge with my draft.
+* Added Custom Knowledge status and search diagnostics to System Check and Getting Started.
+* No database schema change was required.
 
 = 0.9.1 =
 
@@ -177,6 +198,10 @@ Version 0.9.1 is beta software. It has been private-beta tested, but site owners
 * Initial private beta with AI ticket summary, reply generation, reply improvement, merge draft, conversation history, usage logs, permissions, image understanding, and attachment context.
 
 == Upgrade Notice ==
+
+= 0.9.2 =
+
+Adds the Custom Knowledge Base / RAG MVP with manual, URL, and supported file sources. No database schema change is required. Back up the site and test source retrieval and AI output on staging after upgrading.
 
 = 0.9.1 =
 
