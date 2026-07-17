@@ -13,6 +13,8 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Handles admin menu registration and routes admin pages.
  */
 final class SCAI_Admin {
+	/** SupportCandy top-level admin menu slug. */
+	const SUPPORTCANDY_MENU_SLUG = 'wpsc-tickets';
 
 	/**
 	 * Admin menu slug.
@@ -77,6 +79,9 @@ final class SCAI_Admin {
 	 */
 	private $usage_logs_page = null;
 
+	/** Whether the visible SupportCandy child menu was registered. */
+	private $supportcandy_menu_registered = false;
+
 	/**
 	 * Initialize admin hooks.
 	 *
@@ -85,7 +90,9 @@ final class SCAI_Admin {
 	public function init() {
 		$this->init_pages();
 
-		add_action( 'admin_menu', array( $this, 'register_menu' ) );
+		add_action( 'wpsc_before_setting_admin_menu', array( $this, 'register_supportcandy_menu' ) );
+		add_action( 'admin_menu', array( $this, 'register_admin_routes' ), 99 );
+		add_action( 'in_admin_header', array( $this, 'render_internal_navigation' ) );
 	}
 
 	/**
@@ -139,7 +146,42 @@ final class SCAI_Admin {
 	 *
 	 * @return void
 	 */
-	public function register_menu() {
+	public function register_admin_routes() {
+		if ( $this->supportcandy_menu_registered ) {
+			$this->register_hidden_compatibility_pages();
+			return;
+		}
+
+		$this->register_fallback_menu();
+	}
+
+	/**
+	 * Register the single visible plugin page beneath SupportCandy.
+	 *
+	 * SupportCandy fires this hook after creating its parent menu and before
+	 * adding its settings entries.
+	 *
+	 * @return void
+	 */
+	public function register_supportcandy_menu() {
+		if ( $this->supportcandy_menu_registered ) {
+			return;
+		}
+
+		$hook_suffix = add_submenu_page(
+			self::SUPPORTCANDY_MENU_SLUG,
+			esc_html__( 'AI Assistant', 'supportcandy-ai' ),
+			esc_html__( 'AI Assistant', 'supportcandy-ai' ),
+			self::CAPABILITY,
+			self::MENU_SLUG,
+			array( $this, 'render_getting_started_page' )
+		);
+
+		$this->supportcandy_menu_registered = false !== $hook_suffix;
+	}
+
+	/** Register the original top-level menu when SupportCandy integration is unavailable. */
+	private function register_fallback_menu() {
 		add_menu_page(
 			esc_html__( 'SupportCandy AI', 'supportcandy-ai' ),
 			esc_html__( 'SupportCandy AI', 'supportcandy-ai' ),
@@ -212,6 +254,73 @@ final class SCAI_Admin {
 			'scai-usage-logs',
 			array( $this, 'render_usage_logs_page' )
 		);
+
+		add_submenu_page(
+			null,
+			esc_html__( 'AI Providers', 'supportcandy-ai' ),
+			esc_html__( 'AI Providers', 'supportcandy-ai' ),
+			self::CAPABILITY,
+			'scai-provider-settings',
+			array( $this, 'render_provider_settings_page' )
+		);
+	}
+
+	/** Register non-visible routes so bookmarked and internal URLs keep working. */
+	private function register_hidden_compatibility_pages() {
+		$pages = array(
+			array( __( 'SupportCandy AI Settings', 'supportcandy-ai' ), 'scai-settings', array( $this, 'render_settings_page' ) ),
+			array( __( 'AI Providers', 'supportcandy-ai' ), 'scai-providers', array( $this, 'render_provider_settings_page' ) ),
+			array( __( 'AI Providers', 'supportcandy-ai' ), 'scai-provider-settings', array( $this, 'render_provider_settings_page' ) ),
+			array( __( 'AI Permissions', 'supportcandy-ai' ), 'scai-permissions', array( $this, 'render_permissions_page' ) ),
+			array( __( 'Knowledge Sources', 'supportcandy-ai' ), 'scai-knowledge-sources', array( $this, 'render_knowledge_sources_page' ) ),
+			array( __( 'SupportCandy AI System Check', 'supportcandy-ai' ), 'scai-diagnostics', array( $this, 'render_diagnostics_page' ) ),
+			array( __( 'AI Usage Logs', 'supportcandy-ai' ), 'scai-usage-logs', array( $this, 'render_usage_logs_page' ) ),
+		);
+
+		foreach ( $pages as $page ) {
+			add_submenu_page(
+				null,
+				esc_html( $page[0] ),
+				esc_html( $page[0] ),
+				self::CAPABILITY,
+				$page[1],
+				$page[2]
+			);
+		}
+	}
+
+	/** Render shared navigation on plugin-owned admin routes. */
+	public function render_internal_navigation() {
+		if ( ! current_user_can( self::CAPABILITY ) || ! isset( $_GET['page'] ) || ! is_scalar( $_GET['page'] ) ) {
+			return;
+		}
+
+		$current_page = sanitize_key( wp_unslash( $_GET['page'] ) );
+		$plugin_pages = array(
+			'scai-getting-started'  => __( 'Getting Started', 'supportcandy-ai' ),
+			'scai-settings'         => __( 'Settings', 'supportcandy-ai' ),
+			'scai-providers'        => __( 'AI Providers', 'supportcandy-ai' ),
+			'scai-permissions'      => __( 'AI Permissions', 'supportcandy-ai' ),
+			'scai-knowledge-sources' => __( 'Knowledge Sources', 'supportcandy-ai' ),
+			'scai-diagnostics'      => __( 'System Check', 'supportcandy-ai' ),
+			'scai-usage-logs'       => __( 'Usage Logs', 'supportcandy-ai' ),
+		);
+
+		if ( 'scai-provider-settings' === $current_page ) {
+			$current_page = 'scai-providers';
+		}
+
+		if ( ! isset( $plugin_pages[ $current_page ] ) ) {
+			return;
+		}
+
+		?>
+		<nav class="scai-admin-navigation" aria-label="<?php echo esc_attr__( 'AI Assistant administration', 'supportcandy-ai' ); ?>">
+			<?php foreach ( $plugin_pages as $page_slug => $label ) : ?>
+				<a class="scai-admin-navigation__link<?php echo $current_page === $page_slug ? ' is-current' : ''; ?>" href="<?php echo esc_url( admin_url( 'admin.php?page=' . $page_slug ) ); ?>"<?php echo $current_page === $page_slug ? ' aria-current="page"' : ''; ?>><?php echo esc_html( $label ); ?></a>
+			<?php endforeach; ?>
+		</nav>
+		<?php
 	}
 
 	/**
