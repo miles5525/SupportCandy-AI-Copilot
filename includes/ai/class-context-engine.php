@@ -855,8 +855,14 @@ final class SCAI_Context_Engine {
 			$lines[] = '';
 			$lines[] = ( $index + 1 ) . '. ' . ( isset( $document['title'] ) ? $this->normalize_text( $document['title'] ) : '' );
 			$lines[] = 'Source: Custom Knowledge Base';
-			$lines[] = 'Type: Manual';
+			$source_labels = array( 'manual' => 'Manual', 'url' => 'URL', 'file' => 'File' );
+			$source_type   = isset( $document['source_type'] ) ? sanitize_key( $document['source_type'] ) : '';
+			$lines[] = 'Type: ' . ( isset( $source_labels[ $source_type ] ) ? $source_labels[ $source_type ] : 'Custom' );
+			if ( 'url' === $source_type && ! empty( $document['url'] ) ) {
+				$lines[] = 'URL: ' . esc_url_raw( $document['url'], array( 'http', 'https' ) );
+			}
 			$lines[] = 'Tags: ' . $this->format_knowledge_list( isset( $document['tags'] ) ? $document['tags'] : array() );
+			$lines[] = 'Relevance score: ' . ( isset( $document['score'] ) && is_numeric( $document['score'] ) ? (string) (float) $document['score'] : '0' );
 			$lines[] = 'Matched terms: ' . $this->format_knowledge_list( isset( $document['matched_terms'] ) ? $document['matched_terms'] : array() );
 			$lines[] = 'Content:';
 			$lines[] = $this->normalize_multiline_text( $document['content'] );
@@ -890,8 +896,11 @@ final class SCAI_Context_Engine {
 			$tags = isset( $document['tags'] ) ? $document['tags'] : ( isset( $metadata['tags'] ) ? $metadata['tags'] : array() );
 			$sanitized[] = array(
 				'id'            => isset( $document['id'] ) ? absint( $document['id'] ) : 0,
+				'source_type'   => isset( $document['source_type'] ) && in_array( sanitize_key( $document['source_type'] ), array( 'manual', 'url', 'file' ), true ) ? sanitize_key( $document['source_type'] ) : '',
 				'title'         => isset( $document['title'] ) ? $this->truncate_text( $this->normalize_text( $document['title'] ), 500 ) : '',
+				'url'           => isset( $document['source_url'] ) ? esc_url_raw( $document['source_url'], array( 'http', 'https' ) ) : '',
 				'tags'          => $this->sanitize_knowledge_list( $tags ),
+				'score'         => isset( $document['score'] ) && is_numeric( $document['score'] ) ? (float) $document['score'] : 0.0,
 				'matched_terms' => $this->sanitize_knowledge_list( isset( $document['matched_terms'] ) ? $document['matched_terms'] : array() ),
 				'content'       => $content,
 			);

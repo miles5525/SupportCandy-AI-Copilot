@@ -47,6 +47,7 @@ final class SCAI_Getting_Started_Page {
 		$permissions        = $this->get_permissions_status();
 		$required_complete  = (int) $supportcandy_ready + (int) $provider_ready + (int) $permissions['ready'];
 		$betterdocs         = $this->get_betterdocs_status();
+		$custom_knowledge   = $this->get_custom_knowledge_status();
 		$image_enabled      = $this->get_setting( 'image_understanding_enabled', false );
 		?>
 		<div class="wrap scai-admin-page scai-getting-started-wrap">
@@ -149,6 +150,17 @@ final class SCAI_Getting_Started_Page {
 				);
 
 				$this->render_card(
+					$custom_knowledge['type'],
+					$custom_knowledge['label'],
+					__( 'Custom Knowledge Base', 'supportcandy-ai' ),
+					$custom_knowledge['message'],
+					array(
+						array( 'label' => __( 'Knowledge Sources', 'supportcandy-ai' ), 'url' => admin_url( 'admin.php?page=scai-knowledge-sources' ) ),
+						array( 'label' => __( 'System Check', 'supportcandy-ai' ), 'url' => admin_url( 'admin.php?page=scai-diagnostics' ) ),
+					)
+				);
+
+				$this->render_card(
 					$image_enabled ? 'complete' : 'optional',
 					$image_enabled ? __( 'Enabled', 'supportcandy-ai' ) : __( 'Disabled', 'supportcandy-ai' ),
 					__( 'Image Understanding', 'supportcandy-ai' ),
@@ -210,6 +222,39 @@ final class SCAI_Getting_Started_Page {
 			</div>
 		</div>
 		<?php
+	}
+
+	/** Get read-only Custom Knowledge Base setup status. */
+	private function get_custom_knowledge_status() {
+		$base = __( 'Add trusted knowledge sources that AI can retrieve as supporting context. This does not train the AI model.', 'supportcandy-ai' );
+		$pdf  = __( 'PDF extraction requires an approved extractor. Without it, PDFs are marked unsupported.', 'supportcandy-ai' );
+		if ( ! class_exists( 'SCAI_Custom_Knowledge_Repository' ) ) {
+			return array( 'type' => 'warning', 'label' => __( 'Needs attention', 'supportcandy-ai' ), 'message' => $base . ' ' . __( 'The repository is unavailable.', 'supportcandy-ai' ) . ' ' . $pdf );
+		}
+
+		try {
+			$repository = new SCAI_Custom_Knowledge_Repository();
+			if ( ! $repository->table_exists() ) {
+				return array( 'type' => 'warning', 'label' => __( 'Needs attention', 'supportcandy-ai' ), 'message' => $base . ' ' . __( 'The knowledge table is unavailable.', 'supportcandy-ai' ) . ' ' . $pdf );
+			}
+			$counts  = $repository->count_by_status();
+			$active  = absint( isset( $counts['active'] ) ? $counts['active'] : 0 );
+			$total   = absint( isset( $counts['total'] ) ? $counts['total'] : 0 );
+			$message = sprintf(
+				/* translators: 1: Active source count. 2: Total source count. */
+				__( '%1$d active sources; %2$d total sources. Supported source types: Manual Text, URL, File Upload.', 'supportcandy-ai' ),
+				$active,
+				$total
+			) . ' ' . $base . ' ' . $pdf;
+
+			return array(
+				'type'    => $active > 0 ? 'complete' : 'optional',
+				'label'   => $active > 0 ? __( 'Complete', 'supportcandy-ai' ) : __( 'Optional / Not configured', 'supportcandy-ai' ),
+				'message' => $message,
+			);
+		} catch ( Throwable $exception ) {
+			return array( 'type' => 'warning', 'label' => __( 'Needs attention', 'supportcandy-ai' ), 'message' => $base . ' ' . __( 'The repository status could not be checked.', 'supportcandy-ai' ) . ' ' . $pdf );
+		}
 	}
 
 	/**

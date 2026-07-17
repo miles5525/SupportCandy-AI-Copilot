@@ -68,7 +68,7 @@ final class SCAI_URL_Content_Fetcher {
 			}
 
 			$body = wp_remote_retrieve_body( $response );
-			if ( ! is_string( $body ) || strlen( $body ) > self::MAX_RESPONSE_BYTES ) {
+			if ( ! is_string( $body ) || '' === $body || strlen( $body ) > self::MAX_RESPONSE_BYTES || $this->looks_binary( $body ) ) {
 				return $this->error_result( 'fetch_failed', __( 'The page response was too large or invalid.', 'supportcandy-ai' ) );
 			}
 
@@ -190,6 +190,18 @@ final class SCAI_URL_Content_Fetcher {
 
 	private function get_allowed_content_types() {
 		return array( 'text/html', 'text/plain', 'text/markdown', 'application/xhtml+xml' );
+	}
+
+	/** Reject NUL-containing or control-heavy bodies even when the server claims a text MIME type. */
+	private function looks_binary( $body ) {
+		if ( false !== strpos( $body, "\0" ) ) {
+			return true;
+		}
+
+		$sample   = substr( $body, 0, 8192 );
+		$controls = preg_match_all( '/[\x01-\x08\x0B\x0C\x0E-\x1F]/', $sample );
+
+		return false !== $controls && $controls > max( 4, strlen( $sample ) * 0.02 );
 	}
 
 	private function error_result( $code, $message ) {

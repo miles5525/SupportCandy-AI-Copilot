@@ -119,6 +119,9 @@ final class SCAI_Diagnostics_Page {
 	 */
 	const BETTERDOCS_SEARCH_SUBMIT_NAME = 'scai_betterdocs_search_submit';
 
+	/** Custom Knowledge Base search test submit button name. */
+	const CUSTOM_KNOWLEDGE_SEARCH_SUBMIT_NAME = 'scai_custom_knowledge_search_submit';
+
 	/**
 	 * Render diagnostics page.
 	 *
@@ -143,11 +146,17 @@ final class SCAI_Diagnostics_Page {
 				$this->render_betterdocs_status();
 				$this->render_betterdocs_search_form();
 				$this->maybe_render_betterdocs_search_result();
+				$this->render_custom_knowledge_status();
+				$this->render_custom_knowledge_search_form();
+				$this->maybe_render_custom_knowledge_search_result();
 			} else {
 				$this->render_status( $adapter );
 				$this->render_betterdocs_status();
 				$this->render_betterdocs_search_form();
 				$this->maybe_render_betterdocs_search_result();
+				$this->render_custom_knowledge_status();
+				$this->render_custom_knowledge_search_form();
+				$this->maybe_render_custom_knowledge_search_result();
 				$this->render_ticket_form();
 				$this->render_attachment_debug_form();
 				$this->render_image_understanding_debug_form();
@@ -232,6 +241,139 @@ final class SCAI_Diagnostics_Page {
 			?>
 		</div>
 		<?php
+	}
+
+	/** Render read-only Custom Knowledge Base availability and source counts. */
+	private function render_custom_knowledge_status() {
+		$repository_class = class_exists( 'SCAI_Custom_Knowledge_Repository' );
+		$search_available = class_exists( 'SCAI_Custom_Knowledge_Search_Service' );
+		$repository       = null;
+		$table_available  = false;
+		$counts           = array_fill_keys( array( 'active', 'disabled', 'pending', 'error', 'unsupported', 'total' ), 0 );
+		$type_counts      = array_fill_keys( array( 'manual', 'url', 'file' ), 0 );
+
+		if ( $repository_class ) {
+			try {
+				$repository      = new SCAI_Custom_Knowledge_Repository();
+				$table_available = $repository->table_exists();
+				if ( $table_available ) {
+					$counts = array_merge( $counts, $repository->count_by_status() );
+					$type_counts = array_merge( $type_counts, $repository->count_by_source_type() );
+				}
+			} catch ( Throwable $exception ) {
+				$repository = null;
+			}
+		}
+		?>
+		<div class="scai-diagnostic-section scai-system-status">
+		<h2><?php echo esc_html__( 'Custom Knowledge Base Check', 'supportcandy-ai' ); ?></h2>
+		<?php
+		$this->render_key_value_table(
+			array(
+				__( 'Knowledge table available', 'supportcandy-ai' ) => $table_available,
+				__( 'Repository available', 'supportcandy-ai' ) => null !== $repository,
+				__( 'Search service available', 'supportcandy-ai' ) => $search_available,
+				__( 'Active sources count', 'supportcandy-ai' ) => absint( $counts['active'] ),
+				__( 'Disabled sources count', 'supportcandy-ai' ) => absint( $counts['disabled'] ),
+				__( 'Pending sources count', 'supportcandy-ai' ) => absint( $counts['pending'] ),
+				__( 'Error sources count', 'supportcandy-ai' ) => absint( $counts['error'] ),
+				__( 'Unsupported sources count', 'supportcandy-ai' ) => absint( $counts['unsupported'] ),
+				__( 'Total sources count', 'supportcandy-ai' ) => absint( $counts['total'] ),
+				__( 'Manual sources count', 'supportcandy-ai' ) => absint( $type_counts['manual'] ),
+				__( 'URL sources count', 'supportcandy-ai' ) => absint( $type_counts['url'] ),
+				__( 'File sources count', 'supportcandy-ai' ) => absint( $type_counts['file'] ),
+				__( 'PDF extractor available', 'supportcandy-ai' ) => (bool) has_filter( 'scai_extract_pdf_text' ),
+			)
+		);
+		?>
+		</div>
+		<?php
+	}
+
+	/** Render the deterministic Custom Knowledge Base search test form. */
+	private function render_custom_knowledge_search_form() {
+		$search_text = $this->get_requested_custom_knowledge_search_text();
+		if ( '' === $search_text ) {
+			$search_text = 'WooCommerce checkout payment gateway error';
+		}
+		?>
+		<div class="scai-diagnostic-section scai-diagnostic-card">
+		<h2><?php echo esc_html__( 'Custom Knowledge Search Test', 'supportcandy-ai' ); ?></h2>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin.php?page=' . self::PAGE_SLUG ) ); ?>" style="margin-top: 12px; max-width: 760px;">
+			<?php wp_nonce_field( self::NONCE_ACTION, self::NONCE_NAME ); ?>
+			<label for="scai_custom_knowledge_search_text"><strong><?php echo esc_html__( 'Search text', 'supportcandy-ai' ); ?></strong></label>
+			<textarea id="scai_custom_knowledge_search_text" name="scai_custom_knowledge_search_text" rows="4" class="large-text"><?php echo esc_textarea( $search_text ); ?></textarea>
+			<?php submit_button( __( 'Test Custom Knowledge Search', 'supportcandy-ai' ), 'secondary', self::CUSTOM_KNOWLEDGE_SEARCH_SUBMIT_NAME ); ?>
+		</form>
+		</div>
+		<?php
+	}
+
+	/** Validate, execute, and render a requested read-only custom knowledge search. */
+	private function maybe_render_custom_knowledge_search_result() {
+		if ( ! isset( $_POST[ self::CUSTOM_KNOWLEDGE_SEARCH_SUBMIT_NAME ] ) ) {
+			return;
+		}
+		if ( ! $this->verify_request() ) {
+			$this->render_notice( __( 'Security check failed. Please try again.', 'supportcandy-ai' ), 'error' );
+			return;
+		}
+		if ( ! class_exists( 'SCAI_Custom_Knowledge_Search_Service' ) ) {
+			$this->render_notice( __( 'Custom knowledge search service is unavailable.', 'supportcandy-ai' ), 'error' );
+			return;
+		}
+		$search_text = $this->get_requested_custom_knowledge_search_text();
+		if ( '' === $search_text ) {
+			$this->render_notice( __( 'Please enter search text.', 'supportcandy-ai' ), 'warning' );
+			return;
+		}
+
+		$service = new SCAI_Custom_Knowledge_Search_Service();
+		$result  = $service->search( $search_text, array( 'limit' => 3, 'candidate_limit' => 20, 'content_limit' => 1000, 'total_content_limit' => 3000, 'min_score' => 4 ) );
+		if ( empty( $result['available'] ) ) {
+			$this->render_notice( __( 'The custom knowledge repository or table is unavailable.', 'supportcandy-ai' ), 'warning' );
+			return;
+		}
+		$this->render_custom_knowledge_search_result( $result );
+	}
+
+	/** Render only bounded, allow-listed custom knowledge result fields. */
+	private function render_custom_knowledge_search_result( array $result ) {
+		$documents = isset( $result['documents'] ) && is_array( $result['documents'] ) ? $result['documents'] : array();
+		?>
+		<div class="scai-diagnostic-section scai-diagnostic-card">
+		<h2><?php echo esc_html__( 'Custom Knowledge Search Result', 'supportcandy-ai' ); ?></h2>
+		<?php $this->render_key_value_table( array(
+			__( 'Query', 'supportcandy-ai' ) => isset( $result['query'] ) ? sanitize_text_field( $result['query'] ) : '',
+			__( 'Candidate count', 'supportcandy-ai' ) => absint( isset( $result['candidate_count'] ) ? $result['candidate_count'] : 0 ),
+			__( 'Final count', 'supportcandy-ai' ) => absint( isset( $result['count'] ) ? $result['count'] : count( $documents ) ),
+		) ); ?>
+		<?php if ( empty( $documents ) ) : ?>
+			<p><?php echo esc_html__( 'No relevant active custom knowledge sources were found.', 'supportcandy-ai' ); ?></p>
+		<?php else : ?>
+			<table class="widefat striped" style="max-width: 1120px; margin-top: 12px;"><thead><tr>
+				<th><?php echo esc_html__( 'Title', 'supportcandy-ai' ); ?></th><th><?php echo esc_html__( 'Type', 'supportcandy-ai' ); ?></th><th><?php echo esc_html__( 'Score', 'supportcandy-ai' ); ?></th><th><?php echo esc_html__( 'Matched terms', 'supportcandy-ai' ); ?></th><th><?php echo esc_html__( 'Tags', 'supportcandy-ai' ); ?></th><th><?php echo esc_html__( 'Snippet', 'supportcandy-ai' ); ?></th>
+			</tr></thead><tbody>
+			<?php foreach ( $documents as $document ) : if ( ! is_array( $document ) ) { continue; } ?>
+				<?php
+				$metadata = isset( $document['metadata'] ) && is_array( $document['metadata'] ) ? $document['metadata'] : array();
+				$snippet  = isset( $document['excerpt'] ) && is_scalar( $document['excerpt'] ) ? (string) $document['excerpt'] : '';
+				$snippet  = wp_html_excerpt( wp_strip_all_tags( $snippet ), 299, '…' );
+				?>
+				<tr><td><?php echo esc_html( isset( $document['title'] ) ? sanitize_text_field( $document['title'] ) : '' ); ?></td><td><?php echo esc_html( isset( $document['source_type'] ) ? sanitize_key( $document['source_type'] ) : '' ); ?></td><td><?php echo esc_html( isset( $document['score'] ) && is_numeric( $document['score'] ) ? (string) (float) $document['score'] : '0' ); ?></td><td><?php echo esc_html( $this->format_betterdocs_result_list( isset( $document['matched_terms'] ) ? $document['matched_terms'] : array() ) ); ?></td><td><?php echo esc_html( $this->format_betterdocs_result_list( isset( $metadata['tags'] ) ? $metadata['tags'] : array() ) ); ?></td><td><?php echo esc_html( $snippet ); ?></td></tr>
+			<?php endforeach; ?>
+			</tbody></table>
+		<?php endif; ?>
+		</div>
+		<?php
+	}
+
+	/** Get sanitized Custom Knowledge Base search text. */
+	private function get_requested_custom_knowledge_search_text() {
+		if ( ! isset( $_POST['scai_custom_knowledge_search_text'] ) || ! is_scalar( $_POST['scai_custom_knowledge_search_text'] ) ) {
+			return '';
+		}
+		return sanitize_textarea_field( wp_unslash( $_POST['scai_custom_knowledge_search_text'] ) );
 	}
 
 	/**

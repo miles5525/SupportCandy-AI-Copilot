@@ -408,6 +408,36 @@ final class SCAI_Custom_Knowledge_Repository {
 	}
 
 	/**
+	 * Count custom sources grouped by allow-listed source type.
+	 *
+	 * @return array<string, int>
+	 */
+	public function count_by_source_type() {
+		$counts = array_fill_keys( $this->get_allowed_source_types(), 0 );
+
+		if ( ! $this->table_exists() ) {
+			return $counts;
+		}
+
+		$types        = $this->get_allowed_source_types();
+		$placeholders = implode( ', ', array_fill( 0, count( $types ), '%s' ) );
+		$sql          = 'SELECT `source_type`, COUNT(*) AS `source_count` FROM `' . $this->get_table_name() . "` WHERE `source_type` IN ({$placeholders}) GROUP BY `source_type`";
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is schema-controlled and source types are prepared.
+		$rows = $this->wpdb->get_results( $this->wpdb->prepare( $sql, $types ), ARRAY_A );
+
+		foreach ( is_array( $rows ) ? $rows : array() as $row ) {
+			$source_type = $this->sanitize_source_type( isset( $row['source_type'] ) ? $row['source_type'] : '' );
+
+			if ( '' !== $source_type ) {
+				$counts[ $source_type ] = absint( isset( $row['source_count'] ) ? $row['source_count'] : 0 );
+			}
+		}
+
+		return $counts;
+	}
+
+	/**
 	 * Get a bounded set of active custom source candidates.
 	 *
 	 * @param array<string, mixed> $args Candidate query arguments.

@@ -69,9 +69,48 @@ final class SCAI_Knowledge_Sources_Page {
 	public function __construct() {
 		add_action( 'admin_post_scai_add_manual_knowledge_source', array( $this, 'handle_add_manual_source' ) );
 		add_action( 'admin_post_scai_add_url_knowledge_source', array( $this, 'handle_add_url_source' ) );
+		add_action( 'admin_post_scai_add_file_knowledge_source', array( $this, 'handle_add_file_source' ) );
 		add_action( 'admin_post_scai_update_manual_knowledge_source', array( $this, 'handle_update_manual_source' ) );
 		add_action( 'admin_post_scai_toggle_knowledge_source_status', array( $this, 'handle_toggle_source_status' ) );
 		add_action( 'admin_post_scai_delete_knowledge_source', array( $this, 'handle_delete_source' ) );
+	}
+
+	/** Add one uploaded file source. */
+	public function handle_add_file_source() {
+		$this->authorize_post_action( 'scai_add_file_knowledge_source', 'scai_add_file_source_nonce' );
+
+		if ( ! class_exists( 'SCAI_Knowledge_Ingestion_Service' ) || empty( $_FILES['source_file'] ) || ! is_array( $_FILES['source_file'] ) ) {
+			$this->redirect_with_notice( 'invalid_file' );
+		}
+
+		$posted = wp_unslash( $_POST );
+		$title  = isset( $posted['title'] ) && is_scalar( $posted['title'] ) ? sanitize_text_field( (string) $posted['title'] ) : '';
+		$tags   = $this->normalize_tags( isset( $posted['tags'] ) ? $posted['tags'] : '' );
+
+		if ( $this->string_length( $title ) > self::MAX_TITLE_LENGTH || null === $tags ) {
+			$this->redirect_with_notice( 'invalid_file' );
+		}
+
+		$service = new SCAI_Knowledge_Ingestion_Service();
+		$result  = $service->ingest_file(
+			$_FILES['source_file'], // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Validated as a PHP upload by the extractor.
+			array(
+				'title'   => $title,
+				'tags'    => $tags,
+				'enabled' => isset( $posted['enabled'] ),
+			)
+		);
+
+		if ( ! empty( $result['success'] ) ) {
+			$this->redirect_with_notice( 'file_source_added' );
+		}
+		if ( ! empty( $result['id'] ) && isset( $result['status'] ) && 'unsupported' === $result['status'] ) {
+			$this->redirect_with_notice( 'pdf_unsupported' );
+		}
+
+		$allowed_errors = array( 'invalid_file', 'unsupported_file_type', 'unsafe_file_content', 'invalid_json', 'no_readable_text', 'file_extraction_failed', 'repository_unavailable', 'save_failed' );
+		$error_code     = isset( $result['error_code'] ) ? sanitize_key( $result['error_code'] ) : 'file_extraction_failed';
+		$this->redirect_with_notice( in_array( $error_code, $allowed_errors, true ) ? $error_code : 'file_extraction_failed' );
 	}
 
 	/** Add one public URL source. */
@@ -366,6 +405,7 @@ final class SCAI_Knowledge_Sources_Page {
 				<?php $this->render_manual_source_form( $editing, (bool) $repository ); ?>
 				<?php if ( ! $editing ) : ?>
 					<?php $this->render_url_source_form( (bool) $repository ); ?>
+					<?php $this->render_file_source_form( (bool) $repository ); ?>
 				<?php endif; ?>
 			<?php endif; ?>
 
@@ -374,12 +414,6 @@ final class SCAI_Knowledge_Sources_Page {
 			<h2><?php echo esc_html__( 'Other Source Types', 'supportcandy-ai' ); ?></h2>
 			<div class="scai-knowledge-grid">
 				<?php
-				$this->render_source_card(
-					__( 'File Upload', 'supportcandy-ai' ),
-					__( 'Upload safe text-like files such as TXT, Markdown, CSV, or logs.', 'supportcandy-ai' ),
-					__( 'Coming next', 'supportcandy-ai' ),
-					'coming'
-				);
 				$this->render_source_card(
 					__( 'PDF', 'supportcandy-ai' ),
 					__( 'PDF support will require a safe text extractor. Unsupported PDFs will not be indexed until extraction is available.', 'supportcandy-ai' ),
@@ -401,6 +435,38 @@ final class SCAI_Knowledge_Sources_Page {
 				</ul>
 			</section>
 		</div>
+		<?php
+	}
+
+	/** Render the bounded File Source upload form. */
+	private function render_file_source_form( $repository_available ) {
+		?>
+		<section class="scai-knowledge-card scai-knowledge-form-card">
+			<h2><?php echo esc_html__( 'File Source', 'supportcandy-ai' ); ?></h2>
+			<p><?php echo esc_html__( 'Add a safe text-like file as searchable knowledge. Supported now: TXT, Markdown, CSV, LOG, JSON. PDF upload is accepted only when a safe text extractor is available.', 'supportcandy-ai' ); ?></p>
+			<form class="scai-knowledge-form" method="post" enctype="multipart/form-data" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+				<input type="hidden" name="action" value="scai_add_file_knowledge_source" />
+				<input type="hidden" name="MAX_FILE_SIZE" value="2097152" />
+				<?php wp_nonce_field( 'scai_add_file_knowledge_source', 'scai_add_file_source_nonce' ); ?>
+				<p>
+					<label for="scai-file-source-file"><strong><?php echo esc_html__( 'File upload', 'supportcandy-ai' ); ?></strong></label>
+					<input id="scai-file-source-file" type="file" name="source_file" accept=".txt,.md,.markdown,.csv,.log,.json,.pdf,text/plain,text/markdown,text/csv,application/json,application/pdf" required <?php disabled( ! $repository_available ); ?> />
+					<span class="description"><?php echo esc_html__( 'Maximum file size: 2 MB.', 'supportcandy-ai' ); ?></span>
+				</p>
+				<p>
+					<label for="scai-file-source-title"><strong><?php echo esc_html__( 'Title override', 'supportcandy-ai' ); ?></strong></label>
+					<input id="scai-file-source-title" class="regular-text" type="text" name="title" maxlength="<?php echo esc_attr( (string) self::MAX_TITLE_LENGTH ); ?>" <?php disabled( ! $repository_available ); ?> />
+					<span class="description"><?php echo esc_html__( 'Optional. The safe filename is used when this is empty.', 'supportcandy-ai' ); ?></span>
+				</p>
+				<p>
+					<label for="scai-file-source-tags"><strong><?php echo esc_html__( 'Tags/categories', 'supportcandy-ai' ); ?></strong></label>
+					<input id="scai-file-source-tags" class="regular-text" type="text" name="tags" maxlength="1100" <?php disabled( ! $repository_available ); ?> />
+					<span class="description"><?php echo esc_html__( 'Optional. Enter up to 20 comma-separated tags.', 'supportcandy-ai' ); ?></span>
+				</p>
+				<p><label><input type="checkbox" name="enabled" value="1" checked <?php disabled( ! $repository_available ); ?> /> <?php echo esc_html__( 'Enable this source for AI retrieval', 'supportcandy-ai' ); ?></label></p>
+				<?php submit_button( __( 'Add File Source', 'supportcandy-ai' ), 'primary', 'submit', false, $repository_available ? array() : array( 'disabled' => 'disabled' ) ); ?>
+			</form>
+		</section>
 		<?php
 	}
 
@@ -688,6 +754,9 @@ final class SCAI_Knowledge_Sources_Page {
 				<?php if ( 'url' === $source['source_type'] && ! empty( $source['source_url'] ) ) : ?>
 					<div><a href="<?php echo esc_url( $source['source_url'] ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $source['source_url'] ); ?></a></div>
 				<?php endif; ?>
+				<?php if ( 'file' === $source['source_type'] && ! empty( $source['metadata']['original_filename'] ) ) : ?>
+					<div class="scai-knowledge-muted"><?php echo esc_html( sanitize_file_name( $source['metadata']['original_filename'] ) ); ?></div>
+				<?php endif; ?>
 				<?php if ( '' !== $excerpt ) : ?>
 					<div class="scai-knowledge-excerpt"><?php echo esc_html( $excerpt ); ?><?php echo $this->string_length( $source['content'] ) > 160 ? esc_html( '…' ) : ''; ?></div>
 				<?php endif; ?>
@@ -758,6 +827,13 @@ final class SCAI_Knowledge_Sources_Page {
 			'source_added'           => array( 'success', __( 'Manual text source added.', 'supportcandy-ai' ) ),
 			'source_updated'         => array( 'success', __( 'Manual text source updated.', 'supportcandy-ai' ) ),
 			'url_source_added'       => array( 'success', __( 'URL source added.', 'supportcandy-ai' ) ),
+			'file_source_added'      => array( 'success', __( 'File source added.', 'supportcandy-ai' ) ),
+			'pdf_unsupported'        => array( 'warning', __( 'The PDF was recorded as unsupported because no approved text extractor is available. Upload a TXT or Markdown version instead.', 'supportcandy-ai' ) ),
+			'invalid_file'           => array( 'error', __( 'Select a valid non-empty file no larger than 2 MB.', 'supportcandy-ai' ) ),
+			'unsupported_file_type' => array( 'error', __( 'This file type is not supported.', 'supportcandy-ai' ) ),
+			'unsafe_file_content'   => array( 'error', __( 'The file appears binary or does not contain safe readable text.', 'supportcandy-ai' ) ),
+			'invalid_json'          => array( 'error', __( 'The JSON file could not be safely decoded.', 'supportcandy-ai' ) ),
+			'file_extraction_failed'=> array( 'error', __( 'The file could not be safely processed.', 'supportcandy-ai' ) ),
 			'invalid_url'            => array( 'error', __( 'Enter a valid public HTTP or HTTPS URL.', 'supportcandy-ai' ) ),
 			'url_rejected'           => array( 'error', __( 'The URL was rejected because it is invalid, private, or local.', 'supportcandy-ai' ) ),
 			'fetch_failed'           => array( 'error', __( 'The public page could not be fetched.', 'supportcandy-ai' ) ),

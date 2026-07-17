@@ -9,10 +9,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 final class SCAI_Knowledge_Ingestion_Service {
 	private $repository;
 	private $fetcher;
+	private $file_extractor;
 
-	public function __construct( $repository = null, $fetcher = null ) {
+	public function __construct( $repository = null, $fetcher = null, $file_extractor = null ) {
 		$this->repository = $repository instanceof SCAI_Custom_Knowledge_Repository ? $repository : null;
 		$this->fetcher    = $fetcher instanceof SCAI_URL_Content_Fetcher ? $fetcher : null;
+		$this->file_extractor = $file_extractor instanceof SCAI_File_Content_Extractor ? $file_extractor : null;
 	}
 
 	/** Ingest one URL without crawling or making an AI call. */
@@ -70,6 +72,75 @@ final class SCAI_Knowledge_Ingestion_Service {
 		}
 	}
 
+	/** Ingest one uploaded file without retaining the raw upload. */
+	public function ingest_file( array $file, array $args = array() ) {
+		$result = array( 'success' => false, 'id' => 0, 'message' => __( 'The file source could not be saved.', 'supportcandy-ai' ), 'error_code' => 'save_failed', 'status' => 'error' );
+
+		try {
+			$repository = $this->get_repository();
+			if ( ! $repository || ! $repository->table_exists() ) {
+				$result['error_code'] = 'repository_unavailable';
+				return $result;
+			}
+
+			$extracted = $this->get_file_extractor()->extract( $file );
+			$args      = wp_parse_args( $args, array( 'title' => '', 'tags' => array(), 'enabled' => true ) );
+			$is_unsupported = isset( $extracted['status'] ) && 'unsupported' === $extracted['status'];
+
+			if ( empty( $extracted['success'] ) && ! $is_unsupported ) {
+				$result['error_code'] = isset( $extracted['error_code'] ) ? sanitize_key( $extracted['error_code'] ) : 'file_extraction_failed';
+				$result['message']    = isset( $extracted['message'] ) ? sanitize_text_field( $extracted['message'] ) : $result['message'];
+				return $result;
+			}
+
+			$title = is_scalar( $args['title'] ) ? sanitize_text_field( (string) $args['title'] ) : '';
+			if ( '' === $title ) {
+				$title = isset( $extracted['title'] ) ? sanitize_text_field( $extracted['title'] ) : '';
+			}
+			$title   = function_exists( 'mb_substr' ) ? mb_substr( $title, 0, 200 ) : substr( $title, 0, 200 );
+			$content = ! $is_unsupported && isset( $extracted['content'] ) ? (string) $extracted['content'] : '';
+			$user_id = get_current_user_id();
+			$metadata = array_merge(
+				array(
+					'schema_version' => 1,
+					'source_kind'    => 'file',
+					'tags'           => $this->normalize_tags( $args['tags'] ),
+					'created_by'     => $user_id,
+					'updated_by'     => $user_id,
+				),
+				isset( $extracted['metadata'] ) && is_array( $extracted['metadata'] ) ? $extracted['metadata'] : array()
+			);
+
+			$id = $repository->create(
+				array(
+					'source_type'    => 'file',
+					'title'          => $title,
+					'source_url'     => '',
+					'mime_type'      => isset( $extracted['mime_type'] ) ? $extracted['mime_type'] : '',
+					'content'        => $content,
+					'content_hash'   => '' !== $content ? hash( 'sha256', $content ) : '',
+					'metadata'       => $metadata,
+					'status'         => $is_unsupported ? 'unsupported' : ( ! empty( $args['enabled'] ) ? 'active' : 'disabled' ),
+					'last_synced_at' => $is_unsupported ? '' : current_time( 'mysql', true ),
+				)
+			);
+
+			if ( ! $id ) {
+				return $result;
+			}
+
+			return array(
+				'success'    => ! $is_unsupported,
+				'id'         => absint( $id ),
+				'message'    => isset( $extracted['message'] ) ? sanitize_text_field( $extracted['message'] ) : __( 'File source added.', 'supportcandy-ai' ),
+				'error_code' => $is_unsupported ? 'pdf_unsupported' : '',
+				'status'     => $is_unsupported ? 'unsupported' : ( ! empty( $args['enabled'] ) ? 'active' : 'disabled' ),
+			);
+		} catch ( Throwable $exception ) {
+			return $result;
+		}
+	}
+
 	private function get_repository() {
 		if ( ! $this->repository && class_exists( 'SCAI_Custom_Knowledge_Repository' ) ) {
 			$this->repository = new SCAI_Custom_Knowledge_Repository();
@@ -82,6 +153,13 @@ final class SCAI_Knowledge_Ingestion_Service {
 			$this->fetcher = new SCAI_URL_Content_Fetcher();
 		}
 		return $this->fetcher;
+	}
+
+	private function get_file_extractor() {
+		if ( ! $this->file_extractor ) {
+			$this->file_extractor = new SCAI_File_Content_Extractor();
+		}
+		return $this->file_extractor;
 	}
 
 	private function resolve_title( $override, $fetched, $url ) {
