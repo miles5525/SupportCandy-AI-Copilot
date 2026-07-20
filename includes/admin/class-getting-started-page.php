@@ -96,7 +96,7 @@ final class SCAI_Getting_Started_Page {
 					array(
 						array(
 							'label' => __( 'Configure AI Providers', 'supportcandy-ai' ),
-							'url'   => admin_url( 'admin.php?page=scai-providers' ),
+							'url'   => admin_url( 'admin.php?page=scai-provider-settings' ),
 						),
 					)
 				);

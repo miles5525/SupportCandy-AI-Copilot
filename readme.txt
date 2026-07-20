@@ -49,9 +49,11 @@ Compatibility can vary between WordPress, SupportCandy, BetterDocs, and AI provi
 
 == Supported AI Providers ==
 
-The beta includes configurable support for OpenAI-compatible chat-completion endpoints. Administrators can configure the endpoint, API key, and model in the provider settings and test the connection before use.
+The v0.9.2 management build uses one GPT/OpenAI-compatible provider configuration. Administrators can configure its endpoint, API key, and model in the provider settings and test the connection before use.
 
 Compatibility with a service depends on how closely its API follows the expected OpenAI-compatible request and response format. A compatible endpoint does not imply endorsement or official integration by that provider.
+
+Multiple provider presets are future roadmap work and are not implemented in this build.
 
 == BetterDocs Knowledge Base ==
 
@@ -102,13 +104,13 @@ Review your provider configuration and privacy obligations before enabling AI fe
 2. Install and activate SupportCandy.
 3. Upload the SupportCandy AI Assistant ZIP through Plugins > Add New > Upload Plugin, or copy the plugin directory into `/wp-content/plugins/`.
 4. Activate SupportCandy AI Assistant.
-5. Open SupportCandy AI to view the Getting Started checklist.
+5. Open Support > AI Assistant to view the Getting Started checklist.
 6. Configure the provider, permissions, and optional features.
 7. Run System Check before using AI actions on live tickets.
 
 == Configuration ==
 
-1. Open SupportCandy AI. The top-level menu opens the Getting Started setup checklist.
+1. Open Support > AI Assistant. It opens the Getting Started setup checklist. If SupportCandy menu integration is unavailable, the plugin falls back to its original top-level menu.
 2. Open AI Providers and configure an OpenAI-compatible endpoint, API key, and model.
 3. Test the provider connection.
 4. Open AI Permissions and select the SupportCandy agent roles allowed to use AI features.
@@ -175,6 +177,7 @@ Version 0.9.2 is beta software. Site owners should use staging, backups, limited
 
 = 0.9.2 =
 
+* Moved the visible admin entry under Support > AI Assistant while preserving direct plugin page URLs and a fallback top-level menu.
 * Added Custom Knowledge Base / RAG MVP using the existing knowledge table.
 * Added manual text, public URL, and file upload knowledge sources.
 * Added TXT, Markdown, CSV, LOG, and JSON extraction with safe unsupported PDF handling.

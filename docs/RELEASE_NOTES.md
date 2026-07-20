@@ -4,10 +4,11 @@ SupportCandy AI Assistant is an independent plugin. It is not an official Suppor
 
 ## 1. Release Status
 
-- Public beta preparation build currently targeted for management testing.
+- Current target: SetMySite management testing.
 - v0.9.2 Custom Knowledge Base / RAG MVP development is complete.
-- Current package target: `supportcandy-ai-v0.9.2-rag-management-test.zip`.
-- Management testing will follow after the package is built and install-tested.
+- Provider scope is the original single GPT/OpenAI-compatible configuration only.
+- Multiple AI providers remain future roadmap work and are not implemented in this build.
+- The plugin is available under Support → AI Assistant when SupportCandy is active.
 - Agent review remains required before using or sending AI-generated content.
 
 ## 2. Highlights
@@ -59,7 +60,7 @@ SupportCandy AI Assistant is an independent plugin. It is not an official Suppor
 - Improved BetterDocs and attachment diagnostics.
 - Improved safe metadata handling so article bodies and raw prompts are not stored in usage or conversation metadata.
 - Improved failure handling when optional BetterDocs or image capabilities are unavailable.
-- Simplified the admin menu by removing the duplicate SupportCandy AI submenu; the top-level menu now opens Getting Started.
+- Moved the visible plugin entry under Support → AI Assistant. The original top-level menu is now used only as a fallback when SupportCandy integration is unavailable.
 
 ## 6. Known Limitations
 

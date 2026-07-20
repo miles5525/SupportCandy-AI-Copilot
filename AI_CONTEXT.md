@@ -52,7 +52,7 @@ Frontend/Backend Popup
 - System Check page
 - Usage Logs page
 - Getting Started / Setup Checklist page
-- Admin menu cleanup: top-level SupportCandy AI opens Getting Started with no duplicate submenu
+- Admin menu integration: Support → AI Assistant opens Getting Started; the original top-level menu remains only as a fallback when SupportCandy integration is unavailable
 - BetterDocs Knowledge Base MVP complete
 - BetterDocs setting and safe read-only public document adapter
 - Deterministic BetterDocs Knowledge Search Service
@@ -130,14 +130,16 @@ Custom Knowledge Base / RAG MVP: COMPLETE
 
 SupportCandy AI Assistant v0.9.2 RAG development is complete from the development side.
 
-Current package target: `supportcandy-ai-v0.9.2-rag-management-test.zip`. External tester handoff documents are intentionally excluded, and management testing will happen later.
+Current target: SetMySite management testing of the v0.9.2 GPT/OpenAI-compatible-only RAG build. External tester handoff documents are intentionally excluded.
+
+Provider scope for this build: the original single GPT/OpenAI-compatible provider configuration only.
 
 ## Next Product Phase
-- Build `supportcandy-ai-v0.9.2-rag-management-test.zip`.
+- Prepare the SetMySite v0.9.2 management test build when packaging is authorized.
 - Run a clean install and upgrade test using the v0.9.2 package.
 - Hand off for management testing when scheduled.
 - Continue with UI polish and public beta preparation after management package verification.
-- Plan multiple AI provider options next:
+- Multiple AI provider options remain a future roadmap item and are not implemented in this build:
   - Gemini Free
   - Gemini Pro/Paid
   - Custom OpenAI-compatible provider
