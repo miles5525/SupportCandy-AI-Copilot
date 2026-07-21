@@ -90,7 +90,6 @@ final class SCAI_Admin {
 	public function init() {
 		$this->init_pages();
 
-		add_action( 'wpsc_before_setting_admin_menu', array( $this, 'register_supportcandy_menu' ) );
 		add_action( 'admin_menu', array( $this, 'register_admin_routes' ), 99 );
 		add_action( 'in_admin_header', array( $this, 'render_internal_navigation' ) );
 	}
@@ -147,8 +146,10 @@ final class SCAI_Admin {
 	 * @return void
 	 */
 	public function register_admin_routes() {
-		if ( $this->supportcandy_menu_registered ) {
+		if ( $this->supportcandy_parent_menu_exists() ) {
+			$this->register_supportcandy_menu();
 			$this->register_hidden_compatibility_pages();
+			$this->move_supportcandy_menu_after_settings();
 			return;
 		}
 
@@ -157,9 +158,6 @@ final class SCAI_Admin {
 
 	/**
 	 * Register the single visible plugin page beneath SupportCandy.
-	 *
-	 * SupportCandy fires this hook after creating its parent menu and before
-	 * adding its settings entries.
 	 *
 	 * @return void
 	 */
@@ -178,6 +176,70 @@ final class SCAI_Admin {
 		);
 
 		$this->supportcandy_menu_registered = false !== $hook_suffix;
+	}
+
+	/**
+	 * Check whether SupportCandy registered its top-level admin menu.
+	 *
+	 * @return bool
+	 */
+	private function supportcandy_parent_menu_exists() {
+		global $menu;
+
+		if ( ! is_array( $menu ) ) {
+			return false;
+		}
+
+		foreach ( $menu as $menu_item ) {
+			if ( isset( $menu_item[2] ) && self::SUPPORTCANDY_MENU_SLUG === $menu_item[2] ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Move only AI Assistant immediately after SupportCandy Settings.
+	 *
+	 * @return void
+	 */
+	private function move_supportcandy_menu_after_settings() {
+		global $submenu;
+
+		if ( ! isset( $submenu[ self::SUPPORTCANDY_MENU_SLUG ] ) || ! is_array( $submenu[ self::SUPPORTCANDY_MENU_SLUG ] ) ) {
+			return;
+		}
+
+		$items             = array_values( $submenu[ self::SUPPORTCANDY_MENU_SLUG ] );
+		$assistant_position = null;
+		$settings_position  = null;
+
+		foreach ( $items as $position => $item ) {
+			if ( ! isset( $item[2] ) ) {
+				continue;
+			}
+
+			if ( self::MENU_SLUG === $item[2] ) {
+				$assistant_position = $position;
+			} elseif ( 'wpsc-settings' === $item[2] ) {
+				$settings_position = $position;
+			}
+		}
+
+		if ( null === $assistant_position || null === $settings_position || $assistant_position === $settings_position + 1 ) {
+			return;
+		}
+
+		$assistant_item = $items[ $assistant_position ];
+		array_splice( $items, $assistant_position, 1 );
+
+		if ( $assistant_position < $settings_position ) {
+			--$settings_position;
+		}
+
+		array_splice( $items, $settings_position + 1, 0, array( $assistant_item ) );
+		$submenu[ self::SUPPORTCANDY_MENU_SLUG ] = $items;
 	}
 
 	/** Register the original top-level menu when SupportCandy integration is unavailable. */
