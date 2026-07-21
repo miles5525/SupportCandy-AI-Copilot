@@ -300,7 +300,7 @@ final class SCAI_Admin {
 		);
 
 		add_submenu_page(
-			self::MENU_SLUG,
+			null,
 			esc_html__( 'SupportCandy AI System Check', 'supportcandy-ai' ),
 			esc_html__( 'System Check', 'supportcandy-ai' ),
 			self::CAPABILITY,
@@ -335,6 +335,7 @@ final class SCAI_Admin {
 			array( __( 'AI Providers', 'supportcandy-ai' ), 'scai-provider-settings', array( $this, 'render_provider_settings_page' ) ),
 			array( __( 'AI Permissions', 'supportcandy-ai' ), 'scai-permissions', array( $this, 'render_permissions_page' ) ),
 			array( __( 'Knowledge Sources', 'supportcandy-ai' ), 'scai-knowledge-sources', array( $this, 'render_knowledge_sources_page' ) ),
+			// Diagnostics is intentionally hidden from navigation but available by direct URL for troubleshooting.
 			array( __( 'SupportCandy AI System Check', 'supportcandy-ai' ), 'scai-diagnostics', array( $this, 'render_diagnostics_page' ) ),
 			array( __( 'AI Usage Logs', 'supportcandy-ai' ), 'scai-usage-logs', array( $this, 'render_usage_logs_page' ) ),
 		);
@@ -364,7 +365,6 @@ final class SCAI_Admin {
 			'scai-providers'        => __( 'AI Providers', 'supportcandy-ai' ),
 			'scai-permissions'      => __( 'AI Permissions', 'supportcandy-ai' ),
 			'scai-knowledge-sources' => __( 'Knowledge Sources', 'supportcandy-ai' ),
-			'scai-diagnostics'      => __( 'System Check', 'supportcandy-ai' ),
 			'scai-usage-logs'       => __( 'Usage Logs', 'supportcandy-ai' ),
 		);
 

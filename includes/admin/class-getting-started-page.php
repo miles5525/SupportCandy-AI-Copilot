@@ -142,10 +142,6 @@ final class SCAI_Getting_Started_Page {
 							'label' => __( 'Open Settings', 'supportcandy-ai' ),
 							'url'   => admin_url( 'admin.php?page=scai-settings' ),
 						),
-						array(
-							'label' => __( 'Run System Check', 'supportcandy-ai' ),
-							'url'   => admin_url( 'admin.php?page=scai-diagnostics' ),
-						),
 					)
 				);
 
@@ -156,7 +152,6 @@ final class SCAI_Getting_Started_Page {
 					$custom_knowledge['message'],
 					array(
 						array( 'label' => __( 'Knowledge Sources', 'supportcandy-ai' ), 'url' => admin_url( 'admin.php?page=scai-knowledge-sources' ) ),
-						array( 'label' => __( 'System Check', 'supportcandy-ai' ), 'url' => admin_url( 'admin.php?page=scai-diagnostics' ) ),
 					)
 				);
 
@@ -171,19 +166,6 @@ final class SCAI_Getting_Started_Page {
 						array(
 							'label' => __( 'Open Settings', 'supportcandy-ai' ),
 							'url'   => admin_url( 'admin.php?page=scai-settings' ),
-						),
-					)
-				);
-
-				$this->render_card(
-					'optional',
-					__( 'Recommended', 'supportcandy-ai' ),
-					__( 'System Check', 'supportcandy-ai' ),
-					__( 'Use System Check to verify SupportCandy, BetterDocs, attachments, and image readiness.', 'supportcandy-ai' ),
-					array(
-						array(
-							'label' => __( 'Open System Check', 'supportcandy-ai' ),
-							'url'   => admin_url( 'admin.php?page=scai-diagnostics' ),
 						),
 					)
 				);
