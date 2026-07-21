@@ -56,12 +56,11 @@ final class SCAI_Knowledge_Sources_Page {
 	 */
 	const MAX_TAG_LENGTH = 50;
 
-	/**
-	 * Maximum administrator search-test input length.
-	 *
-	 * @var int
-	 */
-	const MAX_SEARCH_TEST_LENGTH = 2000;
+	/** Sources shown per Existing Sources page. */
+	const SOURCES_PER_PAGE = 10;
+
+	/** Maximum Existing Sources search length. */
+	const MAX_LIST_SEARCH_LENGTH = 200;
 
 	/**
 	 * Register authenticated admin POST handlers.
@@ -312,18 +311,35 @@ final class SCAI_Knowledge_Sources_Page {
 			);
 		}
 
-		$repository = $this->get_available_repository();
-		$counts     = $this->get_empty_counts();
-		$sources    = array();
-		$editing    = null;
-		$deleting   = null;
-		$search_text   = '';
-		$search_result = null;
+		$repository    = $this->get_available_repository();
+		$counts        = $this->get_empty_counts();
+		$sources       = array();
+		$editing       = null;
+		$deleting      = null;
+		$source_type   = $this->get_list_source_type();
+		$list_search   = $this->get_list_search();
+		$current_page  = $this->get_list_page();
+		$total_sources = 0;
+		$total_pages   = 1;
 
 		if ( $repository ) {
 			try {
-				$counts  = array_merge( $counts, $repository->count_by_status() );
-				$sources = $repository->list( array( 'per_page' => 100, 'orderby' => 'updated_at', 'order' => 'DESC' ) );
+				$counts        = array_merge( $counts, $repository->count_by_status() );
+				$list_args     = array( 'source_type' => $source_type, 'search' => $list_search );
+				$total_sources = $repository->count( $list_args );
+				$total_pages   = max( 1, (int) ceil( $total_sources / self::SOURCES_PER_PAGE ) );
+				$current_page  = min( $current_page, $total_pages );
+				$sources       = $repository->list(
+					array_merge(
+						$list_args,
+						array(
+							'per_page' => self::SOURCES_PER_PAGE,
+							'page'     => $current_page,
+							'orderby'  => 'updated_at',
+							'order'    => 'DESC',
+						)
+					)
+				);
 
 				$requested_action = $this->get_query_action();
 				$requested_id     = $this->get_query_source_id();
@@ -338,34 +354,11 @@ final class SCAI_Knowledge_Sources_Page {
 					}
 				}
 			} catch ( Throwable $exception ) {
-				$repository = null;
-				$counts     = $this->get_empty_counts();
-				$sources    = array();
-			}
-		}
-
-		if ( $this->is_search_test_request() ) {
-			check_admin_referer( 'scai_test_custom_knowledge_search', 'scai_custom_knowledge_search_nonce' );
-			$search_text = $this->get_search_test_text();
-
-			if ( '' !== $search_text && class_exists( 'SCAI_Custom_Knowledge_Search_Service' ) ) {
-				try {
-					$search_service = new SCAI_Custom_Knowledge_Search_Service();
-					$search_result  = $search_service->search(
-						$search_text,
-						array(
-							'limit'               => 3,
-							'candidate_limit'     => 20,
-							'content_limit'       => 1000,
-							'total_content_limit' => 3000,
-							'min_score'           => 2,
-						)
-					);
-				} catch ( Throwable $exception ) {
-					$search_result = $this->get_unavailable_search_result();
-				}
-			} elseif ( '' !== $search_text ) {
-				$search_result = $this->get_unavailable_search_result();
+				$repository    = null;
+				$counts        = $this->get_empty_counts();
+				$sources       = array();
+				$total_sources = 0;
+				$total_pages   = 1;
 			}
 		}
 
@@ -401,29 +394,13 @@ final class SCAI_Knowledge_Sources_Page {
 
 			<?php if ( $deleting ) : ?>
 				<?php $this->render_delete_confirmation( $deleting ); ?>
-			<?php else : ?>
+			<?php elseif ( $editing ) : ?>
 				<?php $this->render_manual_source_form( $editing, (bool) $repository ); ?>
-				<?php if ( ! $editing ) : ?>
-					<?php $this->render_url_source_form( (bool) $repository ); ?>
-					<?php $this->render_file_source_form( (bool) $repository ); ?>
-				<?php endif; ?>
+			<?php else : ?>
+				<?php $this->render_add_source_section( (bool) $repository ); ?>
 			<?php endif; ?>
 
-			<?php $this->render_search_test( $search_text, $search_result ); ?>
-
-			<h2><?php echo esc_html__( 'Other Source Types', 'supportcandy-ai' ); ?></h2>
-			<div class="scai-knowledge-grid">
-				<?php
-				$this->render_source_card(
-					__( 'PDF', 'supportcandy-ai' ),
-					__( 'PDF support will require a safe text extractor. Unsupported PDFs will not be indexed until extraction is available.', 'supportcandy-ai' ),
-					__( 'Planned', 'supportcandy-ai' ),
-					'planned'
-				);
-				?>
-			</div>
-
-			<?php $this->render_sources_list( $sources ); ?>
+			<?php $this->render_sources_list( $sources, $source_type, $list_search, $current_page, $total_pages, $total_sources ); ?>
 
 			<section class="scai-knowledge-warning">
 				<h2><?php echo esc_html__( 'RAG safety', 'supportcandy-ai' ); ?></h2>
@@ -438,11 +415,52 @@ final class SCAI_Knowledge_Sources_Page {
 		<?php
 	}
 
+	/** Render the unified source-type selector and add forms. */
+	private function render_add_source_section( $repository_available ) {
+		?>
+		<section class="scai-knowledge-card scai-knowledge-form-card scai-knowledge-add-source">
+			<h2><?php echo esc_html__( 'Add Knowledge Source', 'supportcandy-ai' ); ?></h2>
+			<p class="scai-knowledge-source-selector">
+				<label for="scai-knowledge-source-type"><strong><?php echo esc_html__( 'Source Type', 'supportcandy-ai' ); ?></strong></label>
+				<select id="scai-knowledge-source-type">
+					<option value="manual"><?php echo esc_html__( 'Manual Text', 'supportcandy-ai' ); ?></option>
+					<option value="url"><?php echo esc_html__( 'URL', 'supportcandy-ai' ); ?></option>
+					<option value="file"><?php echo esc_html__( 'File Upload', 'supportcandy-ai' ); ?></option>
+				</select>
+			</p>
+
+			<?php $this->render_manual_source_form( null, $repository_available, true ); ?>
+			<?php $this->render_url_source_form( $repository_available ); ?>
+			<?php $this->render_file_source_form( $repository_available ); ?>
+		</section>
+		<script>
+			(function () {
+				var selector = document.getElementById('scai-knowledge-source-type');
+				var container = selector ? selector.closest('.scai-knowledge-add-source') : null;
+
+				if (!selector || !container) {
+					return;
+				}
+
+				function showSelectedSourceType() {
+					var panels = container.querySelectorAll('[data-scai-source-type]');
+
+					for (var index = 0; index < panels.length; index++) {
+						panels[index].hidden = panels[index].getAttribute('data-scai-source-type') !== selector.value;
+					}
+				}
+
+				selector.addEventListener('change', showSelectedSourceType);
+				showSelectedSourceType();
+			}());
+		</script>
+		<?php
+	}
+
 	/** Render the bounded File Source upload form. */
 	private function render_file_source_form( $repository_available ) {
 		?>
-		<section class="scai-knowledge-card scai-knowledge-form-card">
-			<h2><?php echo esc_html__( 'File Source', 'supportcandy-ai' ); ?></h2>
+		<div class="scai-knowledge-source-panel" data-scai-source-type="file">
 			<p><?php echo esc_html__( 'Add a safe text-like file as searchable knowledge. Supported now: TXT, Markdown, CSV, LOG, JSON. PDF upload is accepted only when a safe text extractor is available.', 'supportcandy-ai' ); ?></p>
 			<form class="scai-knowledge-form" method="post" enctype="multipart/form-data" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 				<input type="hidden" name="action" value="scai_add_file_knowledge_source" />
@@ -466,15 +484,14 @@ final class SCAI_Knowledge_Sources_Page {
 				<p><label><input type="checkbox" name="enabled" value="1" checked <?php disabled( ! $repository_available ); ?> /> <?php echo esc_html__( 'Enable this source for AI retrieval', 'supportcandy-ai' ); ?></label></p>
 				<?php submit_button( __( 'Add File Source', 'supportcandy-ai' ), 'primary', 'submit', false, $repository_available ? array() : array( 'disabled' => 'disabled' ) ); ?>
 			</form>
-		</section>
+		</div>
 		<?php
 	}
 
 	/** Render the single-page URL Source form. */
 	private function render_url_source_form( $repository_available ) {
 		?>
-		<section class="scai-knowledge-card scai-knowledge-form-card">
-			<h2><?php echo esc_html__( 'URL Source', 'supportcandy-ai' ); ?></h2>
+		<div class="scai-knowledge-source-panel" data-scai-source-type="url">
 			<p><?php echo esc_html__( 'Add one public page as searchable knowledge. Only one public page is indexed. This does not crawl the full website.', 'supportcandy-ai' ); ?></p>
 			<form class="scai-knowledge-form" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 				<input type="hidden" name="action" value="scai_add_url_knowledge_source" />
@@ -496,7 +513,7 @@ final class SCAI_Knowledge_Sources_Page {
 				<p><label><input type="checkbox" name="enabled" value="1" checked <?php disabled( ! $repository_available ); ?> /> <?php echo esc_html__( 'Enable this source for AI retrieval', 'supportcandy-ai' ); ?></label></p>
 				<?php submit_button( __( 'Add URL Source', 'supportcandy-ai' ), 'primary', 'submit', false, $repository_available ? array() : array( 'disabled' => 'disabled' ) ); ?>
 			</form>
-		</section>
+		</div>
 		<?php
 	}
 
@@ -505,9 +522,10 @@ final class SCAI_Knowledge_Sources_Page {
 	 *
 	 * @param array<string, mixed>|null $source               Source being edited.
 	 * @param bool                      $repository_available Whether storage is available.
+	 * @param bool                      $as_panel             Whether to render inside the unified add section.
 	 * @return void
 	 */
-	private function render_manual_source_form( $source, $repository_available ) {
+	private function render_manual_source_form( $source, $repository_available, $as_panel = false ) {
 		$is_editing = is_array( $source );
 		$title      = $is_editing ? $source['title'] : '';
 		$content    = $is_editing ? $source['content'] : '';
@@ -517,14 +535,19 @@ final class SCAI_Knowledge_Sources_Page {
 		$enabled    = ! $is_editing || 'active' === $source['status'];
 		$action     = $is_editing ? 'scai_update_manual_knowledge_source' : 'scai_add_manual_knowledge_source';
 		?>
-		<section class="scai-knowledge-card scai-knowledge-form-card">
-			<h2><?php echo esc_html__( 'Manual Text Source', 'supportcandy-ai' ); ?></h2>
+		<?php if ( $as_panel ) : ?>
+			<div class="scai-knowledge-source-panel" data-scai-source-type="manual">
+		<?php else : ?>
+			<section class="scai-knowledge-card scai-knowledge-form-card">
+				<h2><?php echo esc_html__( 'Edit Manual Source', 'supportcandy-ai' ); ?></h2>
+		<?php endif; ?>
 			<p><?php echo esc_html__( 'This does not train the AI model. It stores searchable text that can be retrieved and sent as supporting context when agents use AI.', 'supportcandy-ai' ); ?></p>
 
 			<form class="scai-knowledge-form" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 				<input type="hidden" name="action" value="<?php echo esc_attr( $action ); ?>" />
 				<?php if ( $is_editing ) : ?>
 					<input type="hidden" name="source_id" value="<?php echo esc_attr( (string) absint( $source['id'] ) ); ?>" />
+					<?php $this->render_current_list_hidden_fields(); ?>
 					<?php wp_nonce_field( 'scai_update_manual_knowledge_source_' . absint( $source['id'] ), 'scai_update_manual_source_nonce' ); ?>
 				<?php else : ?>
 					<?php wp_nonce_field( 'scai_add_manual_knowledge_source', 'scai_add_manual_source_nonce' ); ?>
@@ -556,11 +579,15 @@ final class SCAI_Knowledge_Sources_Page {
 				<div class="scai-knowledge-actions">
 					<?php submit_button( $is_editing ? __( 'Save Manual Source', 'supportcandy-ai' ) : __( 'Add Manual Source', 'supportcandy-ai' ), 'primary', 'submit', false, $repository_available ? array() : array( 'disabled' => 'disabled' ) ); ?>
 					<?php if ( $is_editing ) : ?>
-						<a class="button button-secondary" href="<?php echo esc_url( $this->get_page_url() ); ?>"><?php echo esc_html__( 'Cancel', 'supportcandy-ai' ); ?></a>
+						<a class="button button-secondary" href="<?php echo esc_url( $this->get_current_list_url() ); ?>"><?php echo esc_html__( 'Cancel', 'supportcandy-ai' ); ?></a>
 					<?php endif; ?>
 				</div>
 			</form>
-		</section>
+		<?php if ( $as_panel ) : ?>
+			</div>
+		<?php else : ?>
+			</section>
+		<?php endif; ?>
 		<?php
 	}
 
@@ -588,10 +615,11 @@ final class SCAI_Knowledge_Sources_Page {
 			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 				<input type="hidden" name="action" value="scai_delete_knowledge_source" />
 				<input type="hidden" name="source_id" value="<?php echo esc_attr( (string) absint( $source['id'] ) ); ?>" />
+				<?php $this->render_current_list_hidden_fields(); ?>
 				<?php wp_nonce_field( 'scai_delete_knowledge_source_' . absint( $source['id'] ), 'scai_delete_source_nonce' ); ?>
 				<div class="scai-knowledge-actions">
 					<?php submit_button( __( 'Delete Source', 'supportcandy-ai' ), 'delete scai-knowledge-danger', 'submit', false ); ?>
-					<a class="button button-secondary" href="<?php echo esc_url( $this->get_page_url() ); ?>"><?php echo esc_html__( 'Cancel', 'supportcandy-ai' ); ?></a>
+					<a class="button button-secondary" href="<?php echo esc_url( $this->get_current_list_url() ); ?>"><?php echo esc_html__( 'Cancel', 'supportcandy-ai' ); ?></a>
 				</div>
 			</form>
 		</section>
@@ -599,115 +627,52 @@ final class SCAI_Knowledge_Sources_Page {
 	}
 
 	/**
-	 * Render the read-only custom knowledge search test.
-	 *
-	 * @param string                   $search_text Search input.
-	 * @param array<string, mixed>|null $result     Search result, when submitted.
-	 * @return void
-	 */
-	private function render_search_test( $search_text, $result ) {
-		?>
-		<section class="scai-knowledge-card scai-knowledge-form-card">
-			<h2><?php echo esc_html__( 'Test Custom Knowledge Search', 'supportcandy-ai' ); ?></h2>
-			<p><?php echo esc_html__( 'Test deterministic retrieval against active custom Knowledge Sources. This test makes no AI request and does not change stored sources.', 'supportcandy-ai' ); ?></p>
-
-			<form class="scai-knowledge-form" method="post" action="<?php echo esc_url( $this->get_page_url() ); ?>">
-				<?php wp_nonce_field( 'scai_test_custom_knowledge_search', 'scai_custom_knowledge_search_nonce' ); ?>
-				<input type="hidden" name="scai_custom_knowledge_search_test" value="1" />
-				<p>
-					<label for="scai-custom-knowledge-search-text"><strong><?php echo esc_html__( 'Search text', 'supportcandy-ai' ); ?></strong></label>
-					<textarea id="scai-custom-knowledge-search-text" class="large-text" name="search_text" rows="3" maxlength="<?php echo esc_attr( (string) self::MAX_SEARCH_TEST_LENGTH ); ?>" required><?php echo esc_textarea( $search_text ); ?></textarea>
-				</p>
-				<?php submit_button( __( 'Test Search', 'supportcandy-ai' ), 'secondary', 'submit', false ); ?>
-			</form>
-
-			<?php if ( is_array( $result ) ) : ?>
-				<?php $this->render_search_test_result( $result ); ?>
-			<?php endif; ?>
-		</section>
-		<?php
-	}
-
-	/**
-	 * Render safe bounded search-test results.
-	 *
-	 * @param array<string, mixed> $result Search result.
-	 * @return void
-	 */
-	private function render_search_test_result( array $result ) {
-		$documents = isset( $result['documents'] ) && is_array( $result['documents'] ) ? array_slice( $result['documents'], 0, 3 ) : array();
-		?>
-		<div class="scai-knowledge-search-result">
-			<h3><?php echo esc_html__( 'Search Result', 'supportcandy-ai' ); ?></h3>
-
-			<?php if ( empty( $result['available'] ) ) : ?>
-				<div class="notice notice-warning inline"><p><?php echo esc_html__( 'Custom knowledge search is not available because its repository or table could not be loaded.', 'supportcandy-ai' ); ?></p></div>
-				<?php return; ?>
-			<?php endif; ?>
-
-			<dl class="scai-knowledge-search-summary">
-				<dt><?php echo esc_html__( 'Query', 'supportcandy-ai' ); ?></dt>
-				<dd><?php echo esc_html( isset( $result['query'] ) ? $result['query'] : '' ); ?></dd>
-				<dt><?php echo esc_html__( 'Candidate count', 'supportcandy-ai' ); ?></dt>
-				<dd><?php echo esc_html( (string) absint( isset( $result['candidate_count'] ) ? $result['candidate_count'] : 0 ) ); ?></dd>
-				<dt><?php echo esc_html__( 'Final count', 'supportcandy-ai' ); ?></dt>
-				<dd><?php echo esc_html( (string) absint( isset( $result['count'] ) ? $result['count'] : 0 ) ); ?></dd>
-			</dl>
-
-			<?php if ( empty( $documents ) ) : ?>
-				<p class="scai-knowledge-muted"><?php echo esc_html__( 'No relevant active custom knowledge sources were found.', 'supportcandy-ai' ); ?></p>
-				<?php return; ?>
-			<?php endif; ?>
-
-			<div class="scai-knowledge-list-wrap">
-				<table class="widefat striped scai-knowledge-list">
-					<thead>
-						<tr>
-							<th scope="col"><?php echo esc_html__( 'Title', 'supportcandy-ai' ); ?></th>
-							<th scope="col"><?php echo esc_html__( 'Type', 'supportcandy-ai' ); ?></th>
-							<th scope="col"><?php echo esc_html__( 'Score', 'supportcandy-ai' ); ?></th>
-							<th scope="col"><?php echo esc_html__( 'Matched terms', 'supportcandy-ai' ); ?></th>
-							<th scope="col"><?php echo esc_html__( 'Tags', 'supportcandy-ai' ); ?></th>
-							<th scope="col"><?php echo esc_html__( 'Snippet', 'supportcandy-ai' ); ?></th>
-						</tr>
-					</thead>
-					<tbody>
-						<?php foreach ( $documents as $document ) : ?>
-							<?php
-							$matched = isset( $document['matched_terms'] ) && is_array( $document['matched_terms'] ) ? array_slice( $document['matched_terms'], 0, 20 ) : array();
-							$tags    = isset( $document['metadata']['tags'] ) && is_array( $document['metadata']['tags'] ) ? array_slice( $document['metadata']['tags'], 0, self::MAX_TAGS ) : array();
-							$snippet = isset( $document['excerpt'] ) ? $this->substring( (string) $document['excerpt'], 0, 300 ) : '';
-							?>
-							<tr>
-								<td><?php echo esc_html( isset( $document['title'] ) ? $document['title'] : '' ); ?></td>
-								<td><?php echo esc_html( $this->get_source_type_label( isset( $document['source_type'] ) ? $document['source_type'] : '' ) ); ?></td>
-								<td><?php echo esc_html( number_format_i18n( isset( $document['score'] ) ? (float) $document['score'] : 0, 1 ) ); ?></td>
-								<td><?php echo esc_html( implode( ', ', array_map( 'sanitize_text_field', $matched ) ) ); ?></td>
-								<td><?php echo esc_html( implode( ', ', array_map( 'sanitize_text_field', $tags ) ) ); ?></td>
-								<td><span class="scai-knowledge-excerpt"><?php echo esc_html( $snippet ); ?></span></td>
-							</tr>
-						<?php endforeach; ?>
-					</tbody>
-				</table>
-			</div>
-		</div>
-		<?php
-	}
-
-	/**
 	 * Render the custom source list.
 	 *
-	 * @param array<int, array<string, mixed>> $sources Sources.
+	 * @param array<int, array<string, mixed>> $sources       Sources.
+	 * @param string                          $source_type   Active source-type filter.
+	 * @param string                          $search        Active search query.
+	 * @param int                             $current_page Current page.
+	 * @param int                             $total_pages  Total pages.
+	 * @param int                             $total_sources Total matching sources.
 	 * @return void
 	 */
-	private function render_sources_list( array $sources ) {
+	private function render_sources_list( array $sources, $source_type, $search, $current_page, $total_pages, $total_sources ) {
 		?>
 		<section class="scai-knowledge-card scai-knowledge-existing">
 			<h2><?php echo esc_html__( 'Existing Sources', 'supportcandy-ai' ); ?></h2>
+			<form class="scai-knowledge-list-filters" method="get" action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>">
+				<input type="hidden" name="page" value="<?php echo esc_attr( self::PAGE_SLUG ); ?>" />
+				<label for="scai-source-type-filter" class="screen-reader-text"><?php echo esc_html__( 'Filter by source type', 'supportcandy-ai' ); ?></label>
+				<select id="scai-source-type-filter" name="source_type">
+					<option value=""><?php echo esc_html__( 'All', 'supportcandy-ai' ); ?></option>
+					<option value="manual" <?php selected( $source_type, 'manual' ); ?>><?php echo esc_html__( 'Manual', 'supportcandy-ai' ); ?></option>
+					<option value="url" <?php selected( $source_type, 'url' ); ?>><?php echo esc_html__( 'URL', 'supportcandy-ai' ); ?></option>
+					<option value="file" <?php selected( $source_type, 'file' ); ?>><?php echo esc_html__( 'File', 'supportcandy-ai' ); ?></option>
+				</select>
+				<label for="scai-source-search" class="screen-reader-text"><?php echo esc_html__( 'Search knowledge sources', 'supportcandy-ai' ); ?></label>
+				<input id="scai-source-search" type="search" name="source_search" value="<?php echo esc_attr( $search ); ?>" maxlength="<?php echo esc_attr( (string) self::MAX_LIST_SEARCH_LENGTH ); ?>" placeholder="<?php echo esc_attr__( 'Search title, URL, or content', 'supportcandy-ai' ); ?>" />
+				<button class="button" type="submit"><?php echo esc_html__( 'Filter', 'supportcandy-ai' ); ?></button>
+				<?php if ( '' !== $source_type || '' !== $search ) : ?>
+					<a class="button" href="<?php echo esc_url( $this->get_page_url() ); ?>"><?php echo esc_html__( 'Clear', 'supportcandy-ai' ); ?></a>
+				<?php endif; ?>
+			</form>
+
+			<p class="scai-knowledge-list-summary">
+				<?php
+				echo esc_html(
+					sprintf(
+						/* translators: %d: Number of matching knowledge sources. */
+						_n( '%d matching source', '%d matching sources', absint( $total_sources ), 'supportcandy-ai' ),
+						absint( $total_sources )
+					)
+				);
+				?>
+			</p>
 
 			<?php if ( empty( $sources ) ) : ?>
 				<div class="scai-knowledge-empty">
-					<p><?php echo esc_html__( 'No custom knowledge sources have been added yet.', 'supportcandy-ai' ); ?></p>
+					<p><?php echo esc_html__( 'No knowledge sources match the current filters.', 'supportcandy-ai' ); ?></p>
 				</div>
 			<?php else : ?>
 				<div class="scai-knowledge-list-wrap">
@@ -731,8 +696,55 @@ final class SCAI_Knowledge_Sources_Page {
 					</table>
 				</div>
 			<?php endif; ?>
+
+			<?php $this->render_sources_pagination( $source_type, $search, $current_page, $total_pages ); ?>
 		</section>
 		<?php
+	}
+
+	/** Render server-side Existing Sources pagination. */
+	private function render_sources_pagination( $source_type, $search, $current_page, $total_pages ) {
+		if ( $total_pages < 2 ) {
+			return;
+		}
+
+		$base_args = array( 'page' => self::PAGE_SLUG );
+
+		if ( '' !== $source_type ) {
+			$base_args['source_type'] = $source_type;
+		}
+
+		if ( '' !== $search ) {
+			$base_args['source_search'] = $search;
+		}
+
+		$pagination_placeholder   = 999999999;
+		$base_args['source_page'] = $pagination_placeholder;
+		$pagination_base          = str_replace(
+			(string) $pagination_placeholder,
+			'%#%',
+			add_query_arg( $base_args, admin_url( 'admin.php' ) )
+		);
+		$links = paginate_links(
+			array(
+				'base'      => $pagination_base,
+				'format'    => '',
+				'current'   => max( 1, absint( $current_page ) ),
+				'total'     => max( 1, absint( $total_pages ) ),
+				'mid_size'  => 2,
+				'prev_text' => __( '&laquo; Previous', 'supportcandy-ai' ),
+				'next_text' => __( 'Next &raquo;', 'supportcandy-ai' ),
+				'type'      => 'list',
+			)
+		);
+
+		if ( is_string( $links ) && '' !== $links ) {
+			?>
+			<nav class="scai-knowledge-pagination" aria-label="<?php echo esc_attr__( 'Knowledge source pages', 'supportcandy-ai' ); ?>">
+				<?php echo wp_kses_post( $links ); ?>
+			</nav>
+			<?php
+		}
 	}
 
 	/**
@@ -745,8 +757,9 @@ final class SCAI_Knowledge_Sources_Page {
 		$tags       = isset( $source['metadata']['tags'] ) && is_array( $source['metadata']['tags'] ) ? array_slice( $source['metadata']['tags'], 0, self::MAX_TAGS ) : array();
 		$excerpt    = preg_replace( '/\s+/u', ' ', $source['content'] );
 		$excerpt    = $this->substring( is_string( $excerpt ) ? trim( $excerpt ) : '', 0, 160 );
-		$edit_url   = add_query_arg( array( 'page' => self::PAGE_SLUG, 'source_id' => absint( $source['id'] ), 'action' => 'edit' ), admin_url( 'admin.php' ) );
-		$delete_url = add_query_arg( array( 'page' => self::PAGE_SLUG, 'source_id' => absint( $source['id'] ), 'action' => 'delete' ), admin_url( 'admin.php' ) );
+		$list_args  = $this->get_current_list_query_args();
+		$edit_url   = add_query_arg( array_merge( $list_args, array( 'source_id' => absint( $source['id'] ), 'action' => 'edit' ) ), admin_url( 'admin.php' ) );
+		$delete_url = add_query_arg( array_merge( $list_args, array( 'source_id' => absint( $source['id'] ), 'action' => 'delete' ) ), admin_url( 'admin.php' ) );
 		?>
 		<tr>
 			<td>
@@ -785,6 +798,7 @@ final class SCAI_Knowledge_Sources_Page {
 						<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 							<input type="hidden" name="action" value="scai_toggle_knowledge_source_status" />
 							<input type="hidden" name="source_id" value="<?php echo esc_attr( (string) absint( $source['id'] ) ); ?>" />
+							<?php $this->render_current_list_hidden_fields(); ?>
 							<?php wp_nonce_field( 'scai_toggle_knowledge_source_status_' . absint( $source['id'] ), 'scai_toggle_source_status_nonce' ); ?>
 							<button class="button button-small" type="submit"><?php echo 'active' === $source['status'] ? esc_html__( 'Disable', 'supportcandy-ai' ) : esc_html__( 'Enable', 'supportcandy-ai' ); ?></button>
 						</form>
@@ -793,26 +807,6 @@ final class SCAI_Knowledge_Sources_Page {
 				</div>
 			</td>
 		</tr>
-		<?php
-	}
-
-	/**
-	 * Render a placeholder source-type card.
-	 *
-	 * @param string $title       Source title.
-	 * @param string $description Source description.
-	 * @param string $status      Status label.
-	 * @param string $status_type Status style key.
-	 * @return void
-	 */
-	private function render_source_card( $title, $description, $status, $status_type ) {
-		$status_type = in_array( $status_type, array( 'coming', 'planned' ), true ) ? $status_type : 'planned';
-		?>
-		<section class="scai-knowledge-card">
-			<span class="scai-knowledge-status scai-knowledge-status-<?php echo esc_attr( $status_type ); ?>"><?php echo esc_html( $status ); ?></span>
-			<h3><?php echo esc_html( $title ); ?></h3>
-			<p><?php echo esc_html( $description ); ?></p>
-		</section>
 		<?php
 	}
 
@@ -1040,44 +1034,91 @@ final class SCAI_Knowledge_Sources_Page {
 		return isset( $_GET['action'] ) && is_scalar( $_GET['action'] ) ? sanitize_key( wp_unslash( $_GET['action'] ) ) : '';
 	}
 
-	/**
-	 * Determine whether the read-only search test was submitted.
-	 *
-	 * @return bool
-	 */
-	private function is_search_test_request() {
-		$request_method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) ) : '';
+	/** Get the allow-listed Existing Sources type filter. */
+	private function get_list_source_type() {
+		$source_type = isset( $_GET['source_type'] ) && is_scalar( $_GET['source_type'] ) ? sanitize_key( wp_unslash( $_GET['source_type'] ) ) : '';
 
-		return 'POST' === $request_method && isset( $_POST['scai_custom_knowledge_search_test'] );
+		return in_array( $source_type, array( 'manual', 'url', 'file' ), true ) ? $source_type : '';
 	}
 
-	/**
-	 * Get bounded administrator-entered search text.
-	 *
-	 * @return string
-	 */
-	private function get_search_test_text() {
-		$text = isset( $_POST['search_text'] ) && is_scalar( $_POST['search_text'] )
-			? sanitize_textarea_field( wp_unslash( $_POST['search_text'] ) )
+	/** Get the bounded Existing Sources search query. */
+	private function get_list_search() {
+		$search = isset( $_GET['source_search'] ) && is_scalar( $_GET['source_search'] )
+			? sanitize_text_field( wp_unslash( $_GET['source_search'] ) )
 			: '';
 
-		return $this->substring( trim( $text ), 0, self::MAX_SEARCH_TEST_LENGTH );
+		return $this->substring( trim( $search ), 0, self::MAX_LIST_SEARCH_LENGTH );
 	}
 
-	/**
-	 * Get a safe unavailable search result.
-	 *
-	 * @return array<string, mixed>
-	 */
-	private function get_unavailable_search_result() {
-		return array(
-			'enabled'         => true,
-			'available'       => false,
-			'query'           => '',
-			'candidate_count' => 0,
-			'count'           => 0,
-			'documents'       => array(),
-		);
+	/** Get the sanitized Existing Sources page number. */
+	private function get_list_page() {
+		return isset( $_GET['source_page'] ) && is_scalar( $_GET['source_page'] ) ? max( 1, absint( wp_unslash( $_GET['source_page'] ) ) ) : 1;
+	}
+
+	/** Get current allow-listed Existing Sources query arguments. */
+	private function get_current_list_query_args() {
+		$args        = array( 'page' => self::PAGE_SLUG );
+		$source_type = $this->get_list_source_type();
+		$search      = $this->get_list_search();
+		$page        = $this->get_list_page();
+
+		if ( '' !== $source_type ) {
+			$args['source_type'] = $source_type;
+		}
+
+		if ( '' !== $search ) {
+			$args['source_search'] = $search;
+		}
+
+		if ( $page > 1 ) {
+			$args['source_page'] = $page;
+		}
+
+		return $args;
+	}
+
+	/** Get a URL preserving current Existing Sources filters and pagination. */
+	private function get_current_list_url() {
+		return add_query_arg( $this->get_current_list_query_args(), admin_url( 'admin.php' ) );
+	}
+
+	/** Render hidden allow-listed list state for row actions. */
+	private function render_current_list_hidden_fields() {
+		foreach ( $this->get_current_list_query_args() as $key => $value ) {
+			if ( 'page' === $key ) {
+				continue;
+			}
+			?>
+			<input type="hidden" name="<?php echo esc_attr( $key ); ?>" value="<?php echo esc_attr( (string) $value ); ?>" />
+			<?php
+		}
+	}
+
+	/** Get sanitized list state submitted by a row action. */
+	private function get_posted_list_query_args() {
+		$args = array();
+		$type = isset( $_POST['source_type'] ) && is_scalar( $_POST['source_type'] ) ? sanitize_key( wp_unslash( $_POST['source_type'] ) ) : '';
+
+		if ( in_array( $type, array( 'manual', 'url', 'file' ), true ) ) {
+			$args['source_type'] = $type;
+		}
+
+		$search = isset( $_POST['source_search'] ) && is_scalar( $_POST['source_search'] )
+			? sanitize_text_field( wp_unslash( $_POST['source_search'] ) )
+			: '';
+		$search = $this->substring( trim( $search ), 0, self::MAX_LIST_SEARCH_LENGTH );
+
+		if ( '' !== $search ) {
+			$args['source_search'] = $search;
+		}
+
+		$page = isset( $_POST['source_page'] ) && is_scalar( $_POST['source_page'] ) ? absint( wp_unslash( $_POST['source_page'] ) ) : 0;
+
+		if ( $page > 1 ) {
+			$args['source_page'] = $page;
+		}
+
+		return $args;
 	}
 
 	/**
@@ -1105,6 +1146,7 @@ final class SCAI_Knowledge_Sources_Page {
 	 * @return void
 	 */
 	private function redirect_with_notice( $notice, array $extra_args = array() ) {
+		$extra_args = array_merge( $this->get_posted_list_query_args(), $extra_args );
 		$args = array_merge(
 			array( 'page' => self::PAGE_SLUG, 'scai_notice' => sanitize_key( $notice ) ),
 			$extra_args

@@ -161,10 +161,6 @@ final class SCAI_Settings_Page {
 
 			<?php $this->render_notice(); ?>
 
-			<?php $this->render_project_status(); ?>
-
-			<hr />
-
 			<?php $this->render_general_settings_form(); ?>
 		</div>
 		<?php

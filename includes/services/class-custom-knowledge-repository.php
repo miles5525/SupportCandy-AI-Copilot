@@ -367,6 +367,73 @@ final class SCAI_Custom_Knowledge_Repository {
 	}
 
 	/**
+	 * Count custom knowledge sources matching list filters.
+	 *
+	 * @param array<string, mixed> $args Query arguments.
+	 * @return int
+	 */
+	public function count( array $args = array() ) {
+		if ( ! $this->table_exists() ) {
+			return 0;
+		}
+
+		$args = wp_parse_args(
+			$args,
+			array(
+				'status'      => '',
+				'source_type' => '',
+				'search'      => '',
+			)
+		);
+
+		$where       = array();
+		$values      = array();
+		$type_values = $this->get_allowed_source_types();
+
+		$raw_source_type = is_scalar( $args['source_type'] ) ? (string) $args['source_type'] : '';
+		$source_type     = $this->sanitize_source_type( $raw_source_type );
+
+		if ( '' !== $raw_source_type && '' === $source_type ) {
+			return 0;
+		}
+
+		if ( '' !== $source_type ) {
+			$where[]  = '`source_type` = %s';
+			$values[] = $source_type;
+		} else {
+			$where[] = '`source_type` IN (' . implode( ', ', array_fill( 0, count( $type_values ), '%s' ) ) . ')';
+			$values  = array_merge( $values, $type_values );
+		}
+
+		$raw_status = is_scalar( $args['status'] ) ? (string) $args['status'] : '';
+		$status     = $this->sanitize_status( $raw_status );
+
+		if ( '' !== $raw_status && '' === $status ) {
+			return 0;
+		}
+
+		if ( '' !== $status ) {
+			$where[]  = '`status` = %s';
+			$values[] = $status;
+		}
+
+		$search = is_scalar( $args['search'] ) ? sanitize_text_field( (string) $args['search'] ) : '';
+
+		if ( '' !== $search ) {
+			$like     = '%' . $this->wpdb->esc_like( $search ) . '%';
+			$where[]  = '(`title` LIKE %s OR `content` LIKE %s OR `source_url` LIKE %s)';
+			$values[] = $like;
+			$values[] = $like;
+			$values[] = $like;
+		}
+
+		$sql = 'SELECT COUNT(*) FROM `' . $this->get_table_name() . '` WHERE ' . implode( ' AND ', $where );
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name is schema-controlled; all filter values are prepared.
+		return absint( $this->wpdb->get_var( $this->wpdb->prepare( $sql, $values ) ) );
+	}
+
+	/**
 	 * Count custom sources grouped by status.
 	 *
 	 * @return array<string, int>

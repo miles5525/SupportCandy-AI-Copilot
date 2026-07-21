@@ -169,7 +169,7 @@ final class SCAI_Admin {
 		$hook_suffix = add_submenu_page(
 			self::SUPPORTCANDY_MENU_SLUG,
 			esc_html__( 'AI Assistant', 'supportcandy-ai' ),
-			esc_html__( 'AI Assistant', 'supportcandy-ai' ),
+			esc_html__( 'AI Assistant ✨', 'supportcandy-ai' ),
 			self::CAPABILITY,
 			self::MENU_SLUG,
 			array( $this, 'render_getting_started_page' )
